@@ -18,6 +18,24 @@ Usage of ./suricata_exporter:
         Address to listen on (default ":9915")
 ```
 
+To verify the exporter is working with your Suricata setup, use the
+following command to view a subset of the capture metrics.
+
+```
+$ curl -s localhost:9915/metrics | grep kernel_packets_total
+# HELP suricata_capture_kernel_packets_total
+# TYPE suricata_capture_kernel_packets_total counter
+suricata_capture_kernel_packets_total{thread="W#01-eth1"} 7744
+suricata_capture_kernel_packets_total{thread="W#02-eth1"} 8435
+suricata_capture_kernel_packets_total{thread="W#03-eth1"} 7564
+suricata_capture_kernel_packets_total{thread="W#04-eth1"} 9747
+```
+
+You can now configure a [Prometheus server](https://prometheus.io/docs/prometheus/latest/getting_started/)
+to scrape the Suricata exporter in regular intervals for later visualization
+and analysis.
+
+
 ## Metrics
 
 Currently produces per-thread metrics for `decoder`, `flow`, `flow_bypassed`,
