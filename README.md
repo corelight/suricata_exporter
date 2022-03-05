@@ -15,7 +15,7 @@ Usage of ./suricata_exporter:
   -version
         Output version information.
   -web.listen-address string
-        Address to listen on (default ":9867")
+        Address to listen on (default ":9915")
 ```
 
 ## Metrics
