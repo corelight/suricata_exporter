@@ -350,130 +350,115 @@ func (sc *suricataCollector) Describe(ch chan<- *prometheus.Desc) {
 	// No need?
 }
 
-func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}) {
-
-	message := counters["message"].(map[string]interface{})
-
-	// Uptime metric
-	ch <- newConstMetric(metricUptime, message)
-
-	// Produce per thread metrics
-	for threadName, thread_ := range message["threads"].(map[string]interface{}) {
-		thread := thread_.(map[string]interface{})
-
-		if strings.HasPrefix(threadName, "W#") { // workers
-
-			if capture, ok := thread["capture"].(map[string]interface{}); ok {
-				for _, m := range perThreadCaptureMetrics {
-					if cm := newConstMetric(m, capture, threadName); cm != nil {
-						ch <- cm
-					}
-				}
+func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
+	if capture, ok := thread["capture"].(map[string]interface{}); ok {
+		for _, m := range perThreadCaptureMetrics {
+			if cm := newConstMetric(m, capture, threadName); cm != nil {
+				ch <- cm
 			}
-
-			tcp := thread["tcp"].(map[string]interface{})
-			for _, m := range perThreadTcpMetrics {
-				if cm := newConstMetric(m, tcp, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			flow := thread["flow"].(map[string]interface{})
-			for _, m := range perThreadFlowMetrics {
-				if cm := newConstMetric(m, flow, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			wrk := flow["wrk"].(map[string]interface{})
-			for _, m := range perThreadFlowWrkMetrics {
-				if cm := newConstMetric(m, wrk, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			defrag := thread["defrag"].(map[string]interface{})
-			defragIpv4 := defrag["ipv4"].(map[string]interface{})
-			defragIpv6 := defrag["ipv6"].(map[string]interface{})
-			for _, m := range perThreadDefragIpv4Metrics {
-				if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-			for _, m := range perThreadDefragIpv6Metrics {
-				if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-			for _, m := range perThreadDefragMetrics {
-				if cm := newConstMetric(m, defrag, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			detect := thread["detect"].(map[string]interface{})
-			for _, m := range perThreadDetectMetrics {
-				if cm := newConstMetric(m, detect, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			// Convert all decoder entries that look like numbers
-			// as perThreadDecoder metric with a "kind" label.
-			decoder := thread["decoder"].(map[string]interface{})
-			for _, m := range perThreadDecoderMetrics {
-				if cm := newConstMetric(m, decoder, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			bypassed := thread["flow_bypassed"].(map[string]interface{})
-			for _, m := range perThreadFlowBypassedMetrics {
-				if cm := newConstMetric(m, bypassed, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			// Convert all app_layer entries that look like numbers
-			// as metrics with a "proto" label.
-			//
-			// suricata_app_layer_flows_total{app="ntp",thread="W#08-wlp0s20f3"} 87
-			// suricata_app_layer_flows_total{app="tls",thread="W#04-wlp0s20f3"} 204
-			appLayer := thread["app_layer"].(map[string]interface{})
-			appLayerFlow := appLayer["flow"].(map[string]interface{})
-			for k, v := range appLayerFlow {
-				value, ok := v.(float64)
-				if !ok {
-					continue
-				}
-				ch <- prometheus.MustNewConstMetric(perThreadAppLayerFlowMetric.desc,
-					perThreadAppLayerFlowMetric.t, value, k, threadName)
-
-			}
-
-		} else if strings.HasPrefix(threadName, "FM") { // flow-managers
-			flow := thread["flow"].(map[string]interface{})
-			mgr := flow["mgr"].(map[string]interface{})
-			for _, m := range perThreadFlowMgrMetrics {
-				if cm := newConstMetric(m, mgr, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-
-			flowBypassed := thread["flow_bypassed"].(map[string]interface{})
-			for _, m := range perThreadFlowMgrBypassedMetrics {
-				if cm := newConstMetric(m, flowBypassed, threadName); cm != nil {
-					ch <- cm
-				}
-			}
-		} else if threadName == "Global" {
-			// Skip
-		} else {
-			log.Printf("WARN: Unhandled thread: %s", threadName)
 		}
 	}
 
-	// Global metrics
+	tcp := thread["tcp"].(map[string]interface{})
+	for _, m := range perThreadTcpMetrics {
+		if cm := newConstMetric(m, tcp, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	flow := thread["flow"].(map[string]interface{})
+	for _, m := range perThreadFlowMetrics {
+		if cm := newConstMetric(m, flow, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	wrk := flow["wrk"].(map[string]interface{})
+	for _, m := range perThreadFlowWrkMetrics {
+		if cm := newConstMetric(m, wrk, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	defrag := thread["defrag"].(map[string]interface{})
+	defragIpv4 := defrag["ipv4"].(map[string]interface{})
+	defragIpv6 := defrag["ipv6"].(map[string]interface{})
+	for _, m := range perThreadDefragIpv4Metrics {
+		if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+	for _, m := range perThreadDefragIpv6Metrics {
+		if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+	for _, m := range perThreadDefragMetrics {
+		if cm := newConstMetric(m, defrag, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	detect := thread["detect"].(map[string]interface{})
+	for _, m := range perThreadDetectMetrics {
+		if cm := newConstMetric(m, detect, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	// Convert all decoder entries that look like numbers
+	// as perThreadDecoder metric with a "kind" label.
+	decoder := thread["decoder"].(map[string]interface{})
+	for _, m := range perThreadDecoderMetrics {
+		if cm := newConstMetric(m, decoder, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	bypassed := thread["flow_bypassed"].(map[string]interface{})
+	for _, m := range perThreadFlowBypassedMetrics {
+		if cm := newConstMetric(m, bypassed, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	// Convert all app_layer entries that look like numbers
+	// as metrics with a "proto" label.
+	//
+	// suricata_app_layer_flows_total{app="ntp",thread="W#08-wlp0s20f3"} 87
+	// suricata_app_layer_flows_total{app="tls",thread="W#04-wlp0s20f3"} 204
+	appLayer := thread["app_layer"].(map[string]interface{})
+	appLayerFlow := appLayer["flow"].(map[string]interface{})
+	for k, v := range appLayerFlow {
+		value, ok := v.(float64)
+		if !ok {
+			continue
+		}
+		ch <- prometheus.MustNewConstMetric(perThreadAppLayerFlowMetric.desc,
+			perThreadAppLayerFlowMetric.t, value, k, threadName)
+
+	}
+}
+
+func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
+	flow := thread["flow"].(map[string]interface{})
+	mgr := flow["mgr"].(map[string]interface{})
+	for _, m := range perThreadFlowMgrMetrics {
+		if cm := newConstMetric(m, mgr, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	flowBypassed := thread["flow_bypassed"].(map[string]interface{})
+	for _, m := range perThreadFlowMgrBypassedMetrics {
+		if cm := newConstMetric(m, flowBypassed, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+}
+
+// Handle global metrics.
+func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
 	if globalTcp, ok := message["tcp"].(map[string]interface{}); ok {
 		for _, m := range globalTcpMetrics {
 			if cm := newConstMetric(m, globalTcp); cm != nil {
@@ -531,12 +516,38 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 				}
 			}
 		} else {
-			log.Printf("WARN: No detect.engines entry message")
+			log.Printf("WARN: No detect.engines entry")
 		}
 
 	} else {
-		log.Printf("WARN: No top-level detect entry message")
+		log.Printf("WARN: No top-level detect entry")
 	}
+
+}
+
+func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}) {
+
+	message := counters["message"].(map[string]interface{})
+
+	// Uptime metric
+	ch <- newConstMetric(metricUptime, message)
+
+	// Produce per thread metrics
+	for threadName, thread_ := range message["threads"].(map[string]interface{}) {
+		thread := thread_.(map[string]interface{})
+
+		if strings.HasPrefix(threadName, "W#") {
+			handleWorkerThread(ch, threadName, thread)
+		} else if strings.HasPrefix(threadName, "FM") {
+			handleFlowManagerThread(ch, threadName, thread)
+		} else if threadName == "Global" {
+			// Skip
+		} else {
+			log.Printf("WARN: Unhandled thread: %s", threadName)
+		}
+	}
+
+	handleGlobal(ch, message)
 
 }
 
