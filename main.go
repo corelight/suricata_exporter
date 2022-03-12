@@ -573,6 +573,7 @@ var (
 	showVersion = flag.Bool("version", false, "Output version information.")
 	socketPath  = flag.String("suricata.socket-path", "/var/run/suricata.socket", "Path to the Suricata Command socket.")
 	addr        = flag.String("web.listen-address", ":9916", "Address to listen on")
+	path        = flag.String("web.telemetry-path", "/metrics", "Path for metrics")
 )
 
 func main() {
@@ -583,5 +584,19 @@ func main() {
 	}
 	r := prometheus.NewRegistry()
 	r.MustRegister(&suricataCollector{*socketPath})
-	http.ListenAndServe(*addr, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
+
+	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>
+			<head><title>Suricata Exporter</title></head>
+			<body>
+			<h1>Suricata Exporter</h1>
+			<p><a href="` + *path + `">Metrics</a></p>
+			</body>
+			</html>`))
+	})
+
+	if err := http.ListenAndServe(*addr, nil); err != nil {
+		log.Fatalf("Error listenAndServe: %v", err)
+	}
 }
