@@ -561,7 +561,7 @@ var (
 	version     string // Set via -ldflags -X main.version=...
 	showVersion = flag.Bool("version", false, "Output version information.")
 	socketPath  = flag.String("suricata.socket-path", "/var/run/suricata.socket", "Path to the Suricata Command socket.")
-	addr        = flag.String("web.listen-address", ":9915", "Address to listen on")
+	addr        = flag.String("web.listen-address", ":9916", "Address to listen on")
 )
 
 func main() {
