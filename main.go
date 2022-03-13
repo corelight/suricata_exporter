@@ -254,6 +254,22 @@ var (
 	rulesLoadedMetric = newGaugeMetric("detect_engine", "rules_loaded", "", "<unused>", "id")
 	rulesFailedMetric = newGaugeMetric("detect_engine", "rules_failed", "", "<unused>", "id")
 	lastReloadMetric  = newGaugeMetric("detect_engine", "last_reload_timestamp_seconds", "Last reload as Unix timestamp", "<unused>", "id")
+
+	// Napatech
+	napaTotalMetrics = []metricInfo{
+		newCounterMetric("napatech", "packets_total", "", "pkts"),
+		newCounterMetric("napatech", "bytes_total", "", "byte"),
+		newCounterMetric("napatech", "overflow_drop_packets_total", "", "overflow_drop_pkts"),
+		newCounterMetric("napatech", "overflow_drop_bytes_total", "", "overflow_drop_byte"),
+	}
+	napaDispatchHost = []metricInfo{
+		newCounterMetric("napatech", "dispatch_host_packets_total", "", "pkts"),
+		newCounterMetric("napatech", "dispatch_host_bytes_total", "", "byte"),
+	}
+	napaDispatchDrop = []metricInfo{
+		newCounterMetric("napatech", "dispatch_drop_packets_total", "", "pkts"),
+		newCounterMetric("napatech", "dispatch_drop_bytes_total", "", "byte"),
+	}
 )
 
 // Send a version message and dump-counters command over the
@@ -348,6 +364,31 @@ type suricataCollector struct {
 
 func (sc *suricataCollector) Describe(ch chan<- *prometheus.Desc) {
 	// No need?
+}
+
+// Extract Napatech related metrics from message
+func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]interface{}) {
+	if napaTotal, ok := message["napa_total"].(map[string]interface{}); ok {
+		for _, m := range napaTotalMetrics {
+			if cm := newConstMetric(m, napaTotal); cm != nil {
+				ch <- cm
+			}
+		}
+	}
+	if napaTotal, ok := message["napa_dispatch_host"].(map[string]interface{}); ok {
+		for _, m := range napaDispatchHost {
+			if cm := newConstMetric(m, napaTotal); cm != nil {
+				ch <- cm
+			}
+		}
+	}
+	if napaTotal, ok := message["napa_dispatch_drop"].(map[string]interface{}); ok {
+		for _, m := range napaDispatchDrop {
+			if cm := newConstMetric(m, napaTotal); cm != nil {
+				ch <- cm
+			}
+		}
+	}
 }
 
 func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
@@ -542,6 +583,8 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 			handleFlowManagerThread(ch, threadName, thread)
 		} else if threadName == "Global" {
 			// Skip
+		} else if threadName == "NapatechStats" {
+			// Skip
 		} else {
 			log.Printf("WARN: Unhandled thread: %s", threadName)
 		}
@@ -549,6 +592,8 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 
 	handleGlobal(ch, message)
 
+	// Global Napatech metrics if available
+	handleNapatechMetrics(ch, message)
 }
 
 func (sc *suricataCollector) Collect(ch chan<- prometheus.Metric) {
