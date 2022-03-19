@@ -16,5 +16,5 @@ RUN go build -ldflags "-X main.version=${VERSION}"
 
 FROM gcr.io/distroless/static-debian11
 COPY --from=builder /app/suricata_exporter .
-EXPOSE 9916
+EXPOSE 9917
 ENTRYPOINT ["/suricata_exporter"]
