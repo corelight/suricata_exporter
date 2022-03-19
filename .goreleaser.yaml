@@ -24,8 +24,4 @@ checksum:
 snapshot:
   name_template: "{{ .Summary }}"
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
+  skip: true
