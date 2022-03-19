@@ -15,14 +15,14 @@ Usage of ./suricata_exporter:
   -version
         Output version information.
   -web.listen-address string
-        Address to listen on (default ":9916")
+        Address to listen on (default ":9917")
 ```
 
 To verify the exporter is working with your Suricata setup, use the
 following command to view a subset of the capture metrics.
 
 ```
-$ curl -s localhost:9916/metrics | grep kernel_packets_total
+$ curl -s localhost:9917/metrics | grep kernel_packets_total
 # HELP suricata_capture_kernel_packets_total
 # TYPE suricata_capture_kernel_packets_total counter
 suricata_capture_kernel_packets_total{thread="W#01-eth1"} 7744
