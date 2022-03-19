@@ -1,0 +1,31 @@
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -X github.com/prometheus/common/version.BuildDate={{.Date}}
+      - -X github.com/prometheus/common/version.BuildUser=goreleaser
+      - -X github.com/prometheus/common/version.Revision={{.FullCommit}}
+      - -X main.version={{.Version}}
+
+archives:
+  - name_template: "suricata_exporter-{{ .Version }}.{{ .Os }}-{{ .Arch }}"
+
+
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Summary }}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

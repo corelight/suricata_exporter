@@ -1,0 +1,6 @@
+.env
+suricata_exporter
+*.swp
+*.swo
+
+dist/
