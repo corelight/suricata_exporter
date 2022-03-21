@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -612,6 +613,13 @@ var (
 
 func main() {
 	flag.Parse()
+
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "Unexpected positional arguments: %q\n", flag.Args())
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
 	if *showVersion {
 		fmt.Printf("%s\n", version)
 		return
