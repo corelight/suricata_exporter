@@ -1,4 +1,4 @@
-module github.com/corelight/suricata_exporter/v2
+module github.com/corelight/suricata_exporter
 
 go 1.14
 
