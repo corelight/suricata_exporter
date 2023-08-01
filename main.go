@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -274,51 +275,136 @@ var (
 	}
 )
 
-// Send a version message and dump-counters command over the
-// Suricata unix socket and return the dump-counters response
-// as map[string]interface{}
-//
-// May want to cleanup/generalize if there's ever a reason to support
-// more commands.
-func dumpCounters(conn net.Conn) (map[string]interface{}, error) {
-	var parsed map[string]interface{}
-	var line []byte
-	var err error
-	var cmdData []byte
+func NewSuricataClient(socketPath string) *SuricataClient {
+	return &SuricataClient{socketPath: socketPath}
+}
 
-	// Send the version as hand-shake.
-	cmdData, _ = json.Marshal(map[string]string{
-		"version": "0.2",
-	})
-	fmt.Fprintf(conn, "%s\n", string(cmdData))
+type SuricataClient struct {
+	socketPath string
+	conn       net.Conn
+}
 
-	reader := bufio.NewReader(conn)
-	line, err = reader.ReadBytes('\n')
-	if err != nil {
-		return nil, err
+func (c *SuricataClient) Close() {
+	if c.conn != nil {
+		c.conn.Close()
 	}
 
+	c.conn = nil
+}
+
+func (c *SuricataClient) EnsureConnection() error {
+	var rerr error
+
+	for i := 0; i < 2; i++ {
+		if c.conn == nil {
+			// Try to establish UNIX connection and do the
+			// handshake. Either of these failing is fatal.
+			conn, err := net.Dial("unix", c.socketPath)
+			if err != nil {
+				return err
+			}
+
+			c.conn = conn
+			if err := c.Handshake(); err != nil {
+				return err
+			}
+		}
+
+		// If we get here, we had a connection or we have a new one,
+		// see if it's still valid by invoking uptime.
+		if _, err := c.Uptime(); err != nil {
+			log.Printf("ERROR: uptime command failed: %v", err)
+			rerr = err
+			continue
+		}
+
+		// Uptime worked, we're done.
+		return nil
+
+	}
+
+	return rerr
+}
+
+// Do the version handshake. Returns nil or the error.
+func (c *SuricataClient) Handshake() error {
+	// Send the version as hand-shake.
+	cmdData, _ := json.Marshal(map[string]string{
+		"version": "0.2",
+	})
+	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+
+	reader := bufio.NewReader(c.conn)
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		c.Close()
+		return fmt.Errorf("Failed read response from Suricata: %v", err)
+	}
+
+	var parsed map[string]interface{}
 	err = json.Unmarshal(line, &parsed)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse version response from Suricata: %v", err)
+		c.Close()
+		return fmt.Errorf("Failed to parse version response from Suricata: %v", err)
 	}
 
 	if parsed["return"] != "OK" {
-		return nil, fmt.Errorf("No OK response from Suricata: %v", parsed)
+		c.Close()
+		return fmt.Errorf("No \"OK\" response from Suricata: %v", parsed)
 	}
 
-	// Send dump-counters command.
-	cmdData, _ = json.Marshal(map[string]string{
+	return nil
+}
+
+func (c *SuricataClient) Uptime() (uint64, error) {
+	cmdData, _ := json.Marshal(map[string]string{
+		"command": "uptime",
+	})
+	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+
+	reader := bufio.NewReader(c.conn)
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		c.Close()
+		return 0, fmt.Errorf("Failed read response from Suricata: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	err = json.Unmarshal(line, &parsed)
+	if err != nil {
+		c.Close()
+		return 0, fmt.Errorf("Failed to parse version response from Suricata: %v", err)
+	}
+
+	if parsed["return"] != "OK" {
+		c.Close()
+		return 0, fmt.Errorf("No \"OK\" response from Suricata: %v", parsed)
+	}
+
+	uptime, ok := parsed["message"].(float64)
+
+	if !ok {
+		return 0, fmt.Errorf("Could get uptime from response: %v", parsed)
+	}
+
+	return uint64(uptime), nil
+}
+
+// Send dump-counters command and return JSON as parsed map[string]interface{}
+func (c *SuricataClient) DumpCounters() (map[string]interface{}, error) {
+	cmdData, _ := json.Marshal(map[string]string{
 		"command": "dump-counters",
 	})
-	fmt.Fprintf(conn, "%s\n", string(cmdData))
+	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
 
 	// Read until '\n' shows up or there was an error. A lot of data
 	// is retuned, so may read short.
+	reader := bufio.NewReader(c.conn)
 	var response []byte
 	for {
 		data, err := reader.ReadBytes('\n')
 		if err != nil {
+			c.Close()
 			return nil, err
 		}
 
@@ -328,11 +414,13 @@ func dumpCounters(conn net.Conn) (map[string]interface{}, error) {
 		}
 	}
 
-	parsed = make(map[string]interface{})
+	var parsed map[string]interface{}
 	if err := json.Unmarshal(response, &parsed); err != nil {
+		c.Close()
 		return nil, err
 	}
 	if parsed["return"] != "OK" {
+		c.Close()
 		return nil, fmt.Errorf("ERROR: No OK response from Suricata: %v", parsed)
 	}
 
@@ -358,14 +446,6 @@ func newConstMetric(m metricInfo, data map[string]interface{}, labelValues ...st
 
 	// fmt.Printf("m.desc=%v m.field=%v\n", m.desc, m.field)
 	return prometheus.MustNewConstMetric(m.desc, m.t, value, labelValues...)
-}
-
-type suricataCollector struct {
-	socketPath string
-}
-
-func (sc *suricataCollector) Describe(ch chan<- *prometheus.Desc) {
-	// No need?
 }
 
 // Extract Napatech related metrics from message
@@ -613,15 +693,25 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 	handleNapatechMetrics(ch, message)
 }
 
+type suricataCollector struct {
+	client *SuricataClient
+	mu     sync.Mutex // SuricataClient is not re-entrant, easy way out.
+}
+
+func (sc *suricataCollector) Describe(ch chan<- *prometheus.Desc) {
+	// No need?
+}
+
 func (sc *suricataCollector) Collect(ch chan<- prometheus.Metric) {
-	conn, err := net.Dial("unix", sc.socketPath)
-	if err != nil {
-		log.Printf("ERROR: Failed to connect to %v: %v", sc.socketPath, err)
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	if err := sc.client.EnsureConnection(); err != nil {
+		log.Printf("ERROR: Failed to connect to %v", err)
 		return
 	}
-	defer conn.Close()
 
-	counters, err := dumpCounters(conn)
+	counters, err := sc.client.DumpCounters()
 	if err != nil {
 		log.Printf("ERROR: Failed to dump-counters: %v", err)
 		return
@@ -652,7 +742,7 @@ func main() {
 		return
 	}
 	r := prometheus.NewRegistry()
-	r.MustRegister(&suricataCollector{*socketPath})
+	r.MustRegister(&suricataCollector{NewSuricataClient(*socketPath), sync.Mutex{}})
 
 	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
