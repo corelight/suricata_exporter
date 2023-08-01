@@ -144,13 +144,15 @@ var (
 	perThreadDefragIpv4Metrics = []metricInfo{
 		newPerThreadCounterMetric("defrag", "ipv4_fragments_total", "", "fragments"),
 		newPerThreadCounterMetric("defrag", "ipv4_reassembled_total", "", "reassembled"),
-		newPerThreadCounterMetric("defrag", "ipv4_timeouts_total", "", "timeouts"),
+		// Removed in 7.0.0: a37a88dcd5950344fc0b4529f1731c3dab9f0888
+		newPerThreadCounterMetric("defrag", "ipv4_timeouts_total", "", "timeouts").Optional(),
 	}
 
 	perThreadDefragIpv6Metrics = []metricInfo{
 		newPerThreadCounterMetric("defrag", "ipv6_fragments_total", "", "fragments"),
 		newPerThreadCounterMetric("defrag", "ipv6_reassembled_total", "", "reassembled"),
-		newPerThreadCounterMetric("defrag", "ipv6_timeouts_total", "", "timeouts"),
+		// Removed in 7.0.0: a37a88dcd5950344fc0b4529f1731c3dab9f0888
+		newPerThreadCounterMetric("defrag", "ipv6_timeouts_total", "", "timeouts").Optional(),
 	}
 	perThreadDefragMetrics = []metricInfo{
 		newPerThreadGaugeMetric("defrag", "max_frag_hits", "", "max_frag_hits"),
@@ -171,7 +173,8 @@ var (
 		newPerThreadCounterMetric("tcp", "pseudo_total", "", "pseudo"),
 		newPerThreadCounterMetric("tcp", "pseudo_failed_total", "", "pseudo"),
 		newPerThreadCounterMetric("tcp", "invalid_checksum_packets_total", "", "invalid_checksum"),
-		newPerThreadCounterMetric("tcp", "no_flow_total", "", "no_flow"),
+		// Removed in 7.0.0: 0360cb654293c333e3be70204705fa7ec328512e
+		newPerThreadCounterMetric("tcp", "no_flow_total", "", "no_flow").Optional(),
 		newPerThreadCounterMetric("tcp", "syn_packets_total", "", "syn"),
 		newPerThreadCounterMetric("tcp", "synack_packets_total", "", "synack"),
 		newPerThreadCounterMetric("tcp", "rst_packets_total", "", "rst"),
@@ -184,7 +187,8 @@ var (
 		newPerThreadCounterMetric("tcp", "overlap_diff_data_total", "", "overlap_diff_data"),
 		newPerThreadCounterMetric("tcp", "insert_data_normal_fail_total", "", "insert_data_normal_fail"),
 		newPerThreadCounterMetric("tcp", "insert_data_overlap_fail_total", "", "insert_data_overlap_fail"),
-		newPerThreadCounterMetric("tcp", "insert_list_fail_total", "", "insert_list_fail"),
+		// Removed in 7.0.0: f34845858ccc011d4dfffcf111d1b779ba133763
+		newPerThreadCounterMetric("tcp", "insert_list_fail_total", "", "insert_list_fail").Optional(),
 	}
 
 	// From .thread.detect
@@ -202,15 +206,17 @@ var (
 	// From .thread.flow.mgr
 	perThreadFlowMgrMetrics = []metricInfo{
 		newPerThreadCounterMetric("flow_mgr", "full_hash_pass_total", "", "full_hash_pass"),
-		newPerThreadCounterMetric("flow_mgr", "closed_pruned_total", "", "closed_pruned"),
-		newPerThreadCounterMetric("flow_mgr", "new_pruned_total", "", "new_pruned"),
-		newPerThreadCounterMetric("flow_mgr", "est_pruned_total", "", "est_pruned"),
-		newPerThreadCounterMetric("flow_mgr", "bypassed_pruned_total", "", "bypassed_pruned"),
+		// Removed in 7.0.0: b0ce55c9df285ebeddd58ff35dd3f3ef15589671
+		newPerThreadCounterMetric("flow_mgr", "closed_pruned_total", "", "closed_pruned").Optional(),
+		newPerThreadCounterMetric("flow_mgr", "new_pruned_total", "", "new_pruned").Optional(),
+		newPerThreadCounterMetric("flow_mgr", "est_pruned_total", "", "est_pruned").Optional(),
+		newPerThreadCounterMetric("flow_mgr", "bypassed_pruned_total", "", "bypassed_pruned").Optional(),
 		newPerThreadGaugeMetric("flow_mgr", "rows_maxlen", "", "rows_maxlen"),
 		newPerThreadCounterMetric("flow_mgr", "flows_checked_total", "", "flows_checked"),
 		newPerThreadCounterMetric("flow_mgr", "flows_notimeout_total", "", "flows_notimeout"),
 		newPerThreadCounterMetric("flow_mgr", "flow_timeout_total", "", "flows_timeout"),
-		newPerThreadCounterMetric("flow_mgr", "flow_timeout_inuse", "", "flows_timeout_inuse"),
+		// Removed in 7.0.0: 66ed3ae6e4d047fa156572dea0216b0d4f3308ad
+		newPerThreadCounterMetric("flow_mgr", "flow_timeout_inuse", "", "flows_timeout_inuse").Optional(),
 		newPerThreadCounterMetric("flow_mgr", "flows_evicted_total", "", "flows_evicted"),
 		newPerThreadGaugeMetric("flow_mgr", "flows_evicted_needs_work", "", "flows_evicted_needs_work"),
 	}
@@ -220,6 +226,12 @@ var (
 		newPerThreadCounterMetric("flow_bypassed", "closed_total", "", "closed"),
 		newPerThreadCounterMetric("flow_bypassed", "packets_total", "", "pkts"),
 		newPerThreadCounterMetric("flow_bypassed", "bytes_total", "", "bytes"),
+	}
+	// From .thread.flow.recycler
+	perThreadFlowRecyclerMetrics = []metricInfo{
+		newPerThreadCounterMetric("flow_recycler", "recycled_total", "", "recycled"),
+		newPerThreadGaugeMetric("flow_recycler", "queue_avg", "", "queue_avg"),
+		newPerThreadGaugeMetric("flow_recycler", "queue_max", "", "queue_max"),
 	}
 
 	// From .message.tcp
@@ -488,6 +500,19 @@ func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thr
 	}
 }
 
+// Handle flow recycler metrics
+func handleFlowRecyclerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
+	flow := thread["flow"].(map[string]interface{})
+	recycler := flow["recycler"].(map[string]interface{})
+	for _, m := range perThreadFlowRecyclerMetrics {
+		if cm := newConstMetric(m, recycler, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	// There's more in the "end" section.
+}
+
 // Handle global metrics.
 func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
 	if globalTcp, ok := message["tcp"].(map[string]interface{}); ok {
@@ -571,6 +596,8 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 			handleWorkerThread(ch, threadName, thread)
 		} else if strings.HasPrefix(threadName, "FM") {
 			handleFlowManagerThread(ch, threadName, thread)
+		} else if strings.HasPrefix(threadName, "FR") {
+			handleFlowRecyclerThread(ch, threadName, thread)
 		} else if threadName == "Global" {
 			// Skip
 		} else if threadName == "NapatechStats" {
