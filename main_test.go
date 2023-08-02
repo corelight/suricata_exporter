@@ -220,8 +220,8 @@ func TestDump604Netmap(t *testing.T) {
 	metrics := produceMetricsHelper(counters)
 	// This is a bit dumb because once more metrics are added this isn't
 	// useful, but testing individual metrics is a bit annoying.
-	if len(metrics) != 231 {
-		t.Errorf("Expected 231 metrics, got %d", len(metrics))
+	if len(metrics) != 233 {
+		t.Errorf("Expected 233 metrics, got %d", len(metrics))
 	}
 }
 
@@ -260,5 +260,46 @@ func TestDump604Napatech(t *testing.T) {
 	}
 	if _, ok := agged["suricata_napatech_dispatch_drop_bytes_total"]; !ok {
 		t.Errorf("Missing suricata_napatech_dispatch_drop_packets_total metric")
+	}
+}
+
+func TestDump700AFPacket(t *testing.T) {
+	data, err := ioutil.ReadFile("./testdata/dump-counters-7.0.0-afpacket.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]interface{}
+	json.Unmarshal(data, &counters)
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+
+	tms, ok := agged["suricata_capture_afpacket_poll_results_total"] // test metrics
+	if !ok {
+		t.Errorf("Failed to find suricata_capture_afpacket_poll_results_total metrics")
+	}
+
+	// 2 threads, 4 results
+	if len(tms) != 8 {
+		t.Errorf("Unexpected number of suricata_capture_afpacket_poll_results_total metrics: %v", len(tms))
+	}
+
+	tms, ok = agged["suricata_detect_alerts_total"] // test metrics
+	if !ok {
+		t.Errorf("Failed to find detect_alerts_total metrics")
+	}
+
+	if len(tms) != 2 {
+		t.Errorf("Unexpected number of suricata_detect_alerts_total metrics: %v", len(tms))
+	}
+
+	tms, ok = agged["suricata_detect_alert_queue_overflows_total"] // test metrics
+	if !ok {
+		t.Errorf("Failed to find detect_alerts_queue_overflows_total metrics")
+	}
+
+	if len(tms) != 2 {
+		t.Errorf("Unexpected number of suricata_detect_alerts_queue_overflows_total metrics: %v", len(tms))
 	}
 }

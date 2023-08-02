@@ -70,11 +70,35 @@ func newPerThreadGaugeMetric(subsystem, name, docString string, field string, va
 var (
 	metricUptime = newMetric("", "uptime_seconds", "Uptime for the Suricata process in seconds", prometheus.GaugeValue, "uptime", []string{})
 
-	// From .thread.tcp
+	// From .thread.capture
 	perThreadCaptureMetrics = []metricInfo{
 		newPerThreadCounterMetric("capture", "kernel_packets_total", "", "kernel_packets"),
 		newPerThreadCounterMetric("capture", "kernel_drops_total", "", "kernel_drops"),
 		newPerThreadCounterMetric("capture", "errors_total", "", "errors").Optional(),
+	}
+
+	// .thread.capture.afpacket
+	perThreadCaptureAFPacketMetrics = []metricInfo{
+		newPerThreadGaugeMetric("capture", "afpacket_busy_loop_avg", "", "busy_loop_avg"),
+		// The following 4 are put into a single metrics afpacket_polls_total
+		// where the result is a labels.
+		// newPerThreadCounterMetric("capture", "afpacket_poll_total", "", "polls"),
+		// newPerThreadCounterMetric("capture", "afpacket_poll_signal_total", "", "poll_signal"),
+		// newPerThreadCounterMetric("capture", "afpacket_poll_timeout_total", "", "poll_timeout"),
+		// newPerThreadCounterMetric("capture", "afpacket_poll_data_total", "", "poll_data"),
+		// newPerThreadCounterMetric("capture", "afpacket_poll_errors_total", "", "poll_errors"),
+		newPerThreadCounterMetric("capture", "afpacket_send_errors_total", "", "send_errors"),
+	}
+
+	// Collect individual afpacket_poll outcomes into a single metric.
+	perThreadAFPacketPollResultMetric = newPerThreadCounterMetric("capture", "afpacket_poll_results_total", "", "<unused>", "result")
+
+	// Entries in afpacket to the label
+	perThreadAFPacketPollResultEntries = [][2]string{
+		{"poll_signal", "signal"},
+		{"poll_timeout", "timeout"},
+		{"poll_data", "data"},
+		{"poll_errors", "error"},
 	}
 
 	// Not quite sure it would be better to have those as labels or separate
@@ -89,6 +113,9 @@ var (
 		newPerThreadCounterMetric("decoder", "ipv4_packets_total", "", "ipv4"),
 		newPerThreadCounterMetric("decoder", "ipv6_packets_total", "", "ipv6"),
 		newPerThreadCounterMetric("decoder", "ethernet_packets_total", "", "ethernet"),
+		// New in 7.0.0
+		newPerThreadCounterMetric("decoder", "arp_packets_total", "", "arp").Optional(),
+		newPerThreadCounterMetric("decoder", "unknown_ethertype_packets_total", "", "unknown_ethertype").Optional(),
 		newPerThreadCounterMetric("decoder", "chdlc_packets_total", "", "chdlc"),
 		newPerThreadCounterMetric("decoder", "raw_packets_total", "", "raw"),
 		newPerThreadCounterMetric("decoder", "null_packets_total", "", "null"),
@@ -96,6 +123,8 @@ var (
 		newPerThreadCounterMetric("decoder", "tcp_packets_total", "", "tcp"),
 		newPerThreadCounterMetric("decoder", "udp_packets_total", "", "udp"),
 		newPerThreadCounterMetric("decoder", "sctp_packets_total", "", "sctp"),
+		// New in 7.0.0
+		newPerThreadCounterMetric("decoder", "esp_packets_total", "", "esp").Optional(),
 		newPerThreadCounterMetric("decoder", "icmpv4_packets_total", "", "icmpv4"),
 		newPerThreadCounterMetric("decoder", "icmpv6_packets_total", "", "icmpv6"),
 		newPerThreadCounterMetric("decoder", "ppp_packets_total", "", "ppp"),
@@ -104,6 +133,8 @@ var (
 		newPerThreadCounterMetric("decoder", "gre_packets_total", "", "gre"),
 		newPerThreadCounterMetric("decoder", "vlan_packets_total", "", "vlan"),
 		newPerThreadCounterMetric("decoder", "vlan_qinq_packets_total", "", "vlan_qinq"),
+		// New in 7.0.0
+		newPerThreadCounterMetric("decoder", "vlan_qinqinq_packets_total", "", "vlan_qinqinq").Optional(),
 		newPerThreadCounterMetric("decoder", "vxlan_packets_total", "", "vxlan"),
 		newPerThreadCounterMetric("decoder", "vntag_packets_total", "", "vntag"),
 		newPerThreadCounterMetric("decoder", "ieee8021ah_packets_total", "", "ieee8021ah"),
@@ -111,6 +142,9 @@ var (
 		newPerThreadCounterMetric("decoder", "ipv4_in_ipv6_packets_total", "", "ipv4_in_ipv6"),
 		newPerThreadCounterMetric("decoder", "ipv6_in_ipv6_packets_total", "", "ipv6_in_ipv6"),
 		newPerThreadCounterMetric("decoder", "mpls_packets_total", "", "mpls"),
+		newPerThreadCounterMetric("decoder", "erspan_packets_total", "", "erspan"),
+		// New in 7.0.0
+		newPerThreadCounterMetric("decoder", "nsh_packets_total", "", "nsh").Optional(),
 
 		// They are there, so include them.
 		newPerThreadGaugeMetric("decoder", "packet_size_avg", "", "avg_pkt_size"),
@@ -169,6 +203,16 @@ var (
 
 	// From .thread.tcp
 	perThreadTcpMetrics = []metricInfo{
+		// New in 7.0.0
+		newPerThreadCounterMetric("tcp", "ack_unseen_data_total", "", "ack_unseen_data").Optional(),
+		// Not sure if active is working on a per-thread basis: Seems to be a counter going
+		// up on the worker threads and down on the flow recycler. Seems a bit borked :-/
+		// newPerThreadGaugeMetric("tcp", "sessions_active", "", "active_sessions").Optional(),
+		newPerThreadCounterMetric("tcp", "segment_from_cache_total", "", "segment_from_cache").Optional(),
+		newPerThreadCounterMetric("tcp", "segment_from_pool_total", "", "segment_from_pool").Optional(),
+		newPerThreadCounterMetric("tcp", "ssn_from_cache_total", "", "ssn_from_cache").Optional(),
+		newPerThreadCounterMetric("tcp", "ssn_from_pool_total", "", "ssn_from_pool").Optional(),
+
 		newPerThreadCounterMetric("tcp", "sessions_total", "", "sessions"),
 		newPerThreadCounterMetric("tcp", "ssn_memcap_drop_total", "", "ssn_memcap_drop"),
 		newPerThreadCounterMetric("tcp", "pseudo_total", "", "pseudo"),
@@ -195,6 +239,9 @@ var (
 	// From .thread.detect
 	perThreadDetectMetrics = []metricInfo{
 		newPerThreadCounterMetric("detect", "alerts_total", "", "alert"),
+		// New in 7.0.0
+		newPerThreadCounterMetric("detect", "alert_queue_overflows_total", "", "alert_queue_overflow").Optional(),
+		newPerThreadCounterMetric("detect", "alerts_suppressed_total", "", "alerts_suppressed").Optional(),
 	}
 
 	// From: .thread.app_layer, labeled with the key. I think summing
@@ -478,6 +525,28 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
 				ch <- cm
+			}
+		}
+
+		if afpacket, ok := capture["afpacket"].(map[string]interface{}); ok {
+			for _, m := range perThreadCaptureAFPacketMetrics {
+				if cm := newConstMetric(m, afpacket, threadName); cm != nil {
+					ch <- cm
+				}
+			}
+
+			for _, key_label := range perThreadAFPacketPollResultEntries {
+				k := key_label[0]
+				label := key_label[1]
+
+				if value, ok := afpacket[k].(float64); ok {
+					ch <- prometheus.MustNewConstMetric(
+						perThreadAFPacketPollResultMetric.desc,
+						perThreadAFPacketPollResultMetric.t,
+						value, label, threadName)
+				} else {
+					log.Printf("ERROR: Failed afpacket %v in %v", k, afpacket)
+				}
 			}
 		}
 	}

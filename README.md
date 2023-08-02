@@ -45,3 +45,5 @@ Currently produces per-thread metrics for `decoder`, `flow`, `flow_bypassed`,
 
 Developed against Suricata 6.0.4 and af-packet. Most supported metrics are
 hard-coded.
+
+Updated for Suricata 7.0.0, but not all new metrics have been added.
