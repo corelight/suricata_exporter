@@ -739,20 +739,20 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 
 	// Produce per thread metrics
 	for threadName, thread_ := range message["threads"].(map[string]interface{}) {
-		thread := thread_.(map[string]interface{})
-
-		if strings.HasPrefix(threadName, "W#") {
-			handleWorkerThread(ch, threadName, thread)
-		} else if strings.HasPrefix(threadName, "FM") {
-			handleFlowManagerThread(ch, threadName, thread)
-		} else if strings.HasPrefix(threadName, "FR") {
-			handleFlowRecyclerThread(ch, threadName, thread)
-		} else if threadName == "Global" {
-			// Skip
-		} else if threadName == "NapatechStats" {
-			// Skip
-		} else {
-			log.Printf("WARN: Unhandled thread: %s", threadName)
+		if thread, ok := thread_.(map[string]interface{}); ok {
+			if strings.HasPrefix(threadName, "W#") {
+				handleWorkerThread(ch, threadName, thread)
+			} else if strings.HasPrefix(threadName, "FM") {
+				handleFlowManagerThread(ch, threadName, thread)
+			} else if strings.HasPrefix(threadName, "FR") {
+				handleFlowRecyclerThread(ch, threadName, thread)
+			} else if threadName == "Global" {
+				// Skip
+			} else if threadName == "NapatechStats" {
+				// Skip
+			} else {
+				log.Printf("WARN: Unhandled thread: %s", threadName)
+			}
 		}
 	}
 
