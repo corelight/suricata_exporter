@@ -753,6 +753,8 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 			} else {
 				log.Printf("WARN: Unhandled thread: %s", threadName)
 			}
+		} else {
+			log.Printf("WARN: Threads entry %s not a map[string]", threadName)
 		}
 	}
 

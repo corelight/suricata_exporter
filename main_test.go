@@ -303,3 +303,22 @@ func TestDump700AFPacket(t *testing.T) {
 		t.Errorf("Unexpected number of suricata_detect_alerts_queue_overflows_total metrics: %v", len(tms))
 	}
 }
+
+func TestDump701(t *testing.T) {
+	data, err := ioutil.ReadFile("./testdata/dump-counters-7.0.1.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]interface{}
+	json.Unmarshal(data, &counters)
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+
+	tms := agged["suricata_flow_mgr_flows_checked_total"]
+
+	if len(tms) != 2 {
+		t.Errorf("Unexpected number of suricata_flow_mgr_flows_checked_total: %v", len(tms))
+	}
+}
