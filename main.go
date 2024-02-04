@@ -521,6 +521,10 @@ func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]inter
 }
 
 func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
+	// XXX: in case of tagged interfaces json changes, see issue #12
+	if capture, ok := thread["capture"].(map[string]interface{}); !ok {
+		return
+	}
 	if capture, ok := thread["capture"].(map[string]interface{}); ok {
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
