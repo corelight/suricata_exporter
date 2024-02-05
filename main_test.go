@@ -322,3 +322,22 @@ func TestDump701(t *testing.T) {
 		t.Errorf("Unexpected number of suricata_flow_mgr_flows_checked_total: %v", len(tms))
 	}
 }
+
+func TestDumpTaggedInterface(t *testing.T) {
+	data, err := ioutil.ReadFile("./testdata/dump-counters-tagged-interface.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]interface{}
+	json.Unmarshal(data, &counters)
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+
+	tms := agged["suricata_capture_kernel_packets_total"]
+
+	if len(tms) != 1 {
+		t.Errorf("Unexpected number of suricata_capture_kernel_packets_total: %v", len(tms))
+	}
+}

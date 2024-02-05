@@ -521,10 +521,6 @@ func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]inter
 }
 
 func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
-	// XXX: in case of tagged interfaces json changes, see issue #12
-	if _, ok := thread["capture"].(map[string]interface{}); !ok {
-		return
-	}
 	if capture, ok := thread["capture"].(map[string]interface{}); ok {
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
@@ -745,7 +741,17 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}
 	for threadName, thread_ := range message["threads"].(map[string]interface{}) {
 		if thread, ok := thread_.(map[string]interface{}); ok {
 			if strings.HasPrefix(threadName, "W#") {
-				handleWorkerThread(ch, threadName, thread)
+				if _, ok := thread["flow"].(map[string]interface{}); !ok {
+					for threadName_, thread_ := range thread {
+						if v, ok := thread_.(map[string]interface{}); v != nil && ok {
+							handleWorkerThread(ch, threadName+"."+threadName_, v)
+						} else {
+							log.Printf("WARN: Nested thread not found")
+						}
+					}
+				} else {
+					handleWorkerThread(ch, threadName, thread)
+				}
 			} else if strings.HasPrefix(threadName, "FM") {
 				handleFlowManagerThread(ch, threadName, thread)
 			} else if strings.HasPrefix(threadName, "FR") {
