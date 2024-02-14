@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -16,13 +16,13 @@ import (
 
 var (
 	descStringRe   = regexp.MustCompile("fqName: \"([^\"]+)\"")
-	sampleCounters = map[string]interface{}{
-		"message": map[string]interface{}{
+	sampleCounters = map[string]any{
+		"message": map[string]any{
 			"uptime":  123.0,
-			"threads": map[string]interface{}{},
-			"detect": map[string]interface{}{
-				"engines": []interface{}{
-					map[string]interface{}{
+			"threads": map[string]any{},
+			"detect": map[string]any{
+				"engines": []any{
+					map[string]any{
 						"id":           0.0,
 						"last_reload":  "2021-12-08T11:28:38.980499+0100",
 						"rules_loaded": 42.0,
@@ -45,7 +45,10 @@ func aggregateMetrics(metrics []prometheus.Metric) map[string][]testMetric {
 	result := make(map[string][]testMetric)
 	for _, m := range metrics {
 		dm := &dto.Metric{}
-		m.Write(dm)
+		err := m.Write(dm)
+		if err != nil {
+			return nil
+		}
 		tm := testMetricFromMetric(m)
 		// fmt.Printf("%+v\n", tm)
 
@@ -58,8 +61,10 @@ func aggregateMetrics(metrics []prometheus.Metric) map[string][]testMetric {
 func testMetricFromMetric(m prometheus.Metric) testMetric {
 	desc := m.Desc()
 	dm := &dto.Metric{}
-	m.Write(dm)
-
+	err := m.Write(dm)
+	if err != nil {
+		return testMetric{}
+	}
 	var type_ string
 	var value float64
 	if dm.Counter != nil {
@@ -90,7 +95,7 @@ func testMetricFromMetric(m prometheus.Metric) testMetric {
 }
 
 // Call produceMetrics with the given data and collect all produced metrics.
-func produceMetricsHelper(data map[string]interface{}) []prometheus.Metric {
+func produceMetricsHelper(data map[string]any) []prometheus.Metric {
 	ch := make(chan prometheus.Metric)
 	finished := make(chan bool)
 
@@ -125,17 +130,23 @@ func TestProduceMetricsRules(t *testing.T) {
 		if strings.Contains(m.Desc().String(), "suricata_detect_engine_rules_loaded") {
 			found_rules_loaded = true
 			dm := &dto.Metric{}
-			m.Write(dm)
+			err := m.Write(dm)
+			if err != nil {
+				t.Error(err)
+			}
 
-			expected := `label:<name:"id" value:"0" > gauge:<value:42 > `
+			expected := `label:{name:"id"  value:"0"}  gauge:{value:42}`
 			if dm.String() != expected {
 				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
 			}
 		} else if strings.Contains(m.Desc().String(), "suricata_detect_engine_rules_failed") {
 			dm := &dto.Metric{}
-			m.Write(dm)
+			err := m.Write(dm)
+			if err != nil {
+				t.Error(err)
+			}
 			found_rules_failed = true
-			expected := `label:<name:"id" value:"0" > gauge:<value:18 > `
+			expected := `label:{name:"id"  value:"0"}  gauge:{value:18}`
 			if dm.String() != expected {
 				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
 			}
@@ -161,9 +172,11 @@ func TestProduceMetricsLastReload(t *testing.T) {
 		if strings.Contains(m.Desc().String(), "suricata_detect_engine_last_reload") {
 			found_last_reload = true
 			dm := &dto.Metric{}
-			m.Write(dm)
-
-			expected := `label:<name:"id" value:"0" > gauge:<value:1.638959318e+09 > `
+			err := m.Write(dm)
+			if err != nil {
+				t.Error(err)
+			}
+			expected := `label:{name:"id"  value:"0"}  gauge:{value:1.638959318e+09}`
 			if dm.String() != expected {
 				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
 			}
@@ -176,13 +189,16 @@ func TestProduceMetricsLastReload(t *testing.T) {
 }
 
 func TestDump604AFPacket(t *testing.T) {
-	data, err := ioutil.ReadFile("./testdata/dump-counters-6.0.4-afpacket.json")
+	data, err := os.ReadFile("./testdata/dump-counters-6.0.4-afpacket.json")
 	if err != nil {
 		log.Panicf("Unable to open file: %s", err)
 	}
 
-	var counters map[string]interface{}
-	json.Unmarshal(data, &counters)
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
 
 	metrics := produceMetricsHelper(counters)
 	agged := aggregateMetrics(metrics)
@@ -209,13 +225,16 @@ func TestDump604AFPacket(t *testing.T) {
 }
 
 func TestDump604Netmap(t *testing.T) {
-	data, err := ioutil.ReadFile("./testdata/dump-counters-6.0.4-netmap.json")
+	data, err := os.ReadFile("./testdata/dump-counters-6.0.4-netmap.json")
 	if err != nil {
 		log.Panicf("Unable to open file: %s", err)
 	}
 
-	var counters map[string]interface{}
-	json.Unmarshal(data, &counters)
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
 
 	metrics := produceMetricsHelper(counters)
 	// This is a bit dumb because once more metrics are added this isn't
@@ -226,13 +245,16 @@ func TestDump604Netmap(t *testing.T) {
 }
 
 func TestDump604Napatech(t *testing.T) {
-	data, err := ioutil.ReadFile("./testdata/dump-counters-6.0.4-napatech.json")
+	data, err := os.ReadFile("./testdata/dump-counters-6.0.4-napatech.json")
 	if err != nil {
 		log.Panicf("Unable to open file: %s", err)
 	}
 
-	var counters map[string]interface{}
-	json.Unmarshal(data, &counters)
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
 
 	metrics := produceMetricsHelper(counters)
 	agged := aggregateMetrics(metrics)
@@ -264,13 +286,16 @@ func TestDump604Napatech(t *testing.T) {
 }
 
 func TestDump700AFPacket(t *testing.T) {
-	data, err := ioutil.ReadFile("./testdata/dump-counters-7.0.0-afpacket.json")
+	data, err := os.ReadFile("./testdata/dump-counters-7.0.0-afpacket.json")
 	if err != nil {
 		log.Panicf("Unable to open file: %s", err)
 	}
 
-	var counters map[string]interface{}
-	json.Unmarshal(data, &counters)
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
 
 	metrics := produceMetricsHelper(counters)
 	agged := aggregateMetrics(metrics)
@@ -305,13 +330,16 @@ func TestDump700AFPacket(t *testing.T) {
 }
 
 func TestDump701(t *testing.T) {
-	data, err := ioutil.ReadFile("./testdata/dump-counters-7.0.1.json")
+	data, err := os.ReadFile("./testdata/dump-counters-7.0.1.json")
 	if err != nil {
 		log.Panicf("Unable to open file: %s", err)
 	}
 
-	var counters map[string]interface{}
-	json.Unmarshal(data, &counters)
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
 
 	metrics := produceMetricsHelper(counters)
 	agged := aggregateMetrics(metrics)

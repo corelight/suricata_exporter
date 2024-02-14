@@ -376,72 +376,85 @@ func (c *SuricataClient) EnsureConnection() error {
 // Do the version handshake. Returns nil or the error.
 func (c *SuricataClient) Handshake() error {
 	// Send the version as hand-shake.
-	cmdData, _ := json.Marshal(map[string]string{
+	cmdData, err := json.Marshal(map[string]string{
 		"version": "0.2",
 	})
+	if err != nil {
+		c.Close()
+		return err
+	}
+
 	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
 
 	reader := bufio.NewReader(c.conn)
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
 		c.Close()
-		return fmt.Errorf("Failed read response from Suricata: %v", err)
+		return fmt.Errorf("failed read response from Suricata: %w", err)
 	}
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(line, &parsed)
 	if err != nil {
 		c.Close()
-		return fmt.Errorf("Failed to parse version response from Suricata: %v", err)
+		return fmt.Errorf("failed to parse version response from Suricata: %w", err)
 	}
 
 	if parsed["return"] != "OK" {
 		c.Close()
-		return fmt.Errorf("No \"OK\" response from Suricata: %v", parsed)
+		return fmt.Errorf("no \"OK\" response from Suricata: %v", parsed)
 	}
 
 	return nil
 }
 
 func (c *SuricataClient) Uptime() (uint64, error) {
-	cmdData, _ := json.Marshal(map[string]string{
+	cmdData, err := json.Marshal(map[string]string{
 		"command": "uptime",
 	})
+	if err != nil {
+		c.Close()
+		return 0, err
+	}
 	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
 
 	reader := bufio.NewReader(c.conn)
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
 		c.Close()
-		return 0, fmt.Errorf("Failed read response from Suricata: %v", err)
+		return 0, fmt.Errorf("failed read response from Suricata: %w", err)
 	}
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(line, &parsed)
 	if err != nil {
 		c.Close()
-		return 0, fmt.Errorf("Failed to parse version response from Suricata: %v", err)
+		return 0, fmt.Errorf("failed to parse version response from Suricata: %w", err)
 	}
 
 	if parsed["return"] != "OK" {
 		c.Close()
-		return 0, fmt.Errorf("No \"OK\" response from Suricata: %v", parsed)
+		return 0, fmt.Errorf("no \"OK\" response from Suricata: %v", parsed)
 	}
 
 	uptime, ok := parsed["message"].(float64)
 
 	if !ok {
-		return 0, fmt.Errorf("Could get uptime from response: %v", parsed)
+		return 0, fmt.Errorf("could get uptime from response: %v", parsed)
 	}
 
 	return uint64(uptime), nil
 }
 
-// Send dump-counters command and return JSON as parsed map[string]interface{}
-func (c *SuricataClient) DumpCounters() (map[string]interface{}, error) {
-	cmdData, _ := json.Marshal(map[string]string{
+// Send dump-counters command and return JSON as parsed map[string]any
+func (c *SuricataClient) DumpCounters() (map[string]any, error) {
+	cmdData, err := json.Marshal(map[string]string{
 		"command": "dump-counters",
 	})
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
 	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
 
 	// Read until '\n' shows up or there was an error. A lot of data
@@ -461,7 +474,7 @@ func (c *SuricataClient) DumpCounters() (map[string]interface{}, error) {
 		}
 	}
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(response, &parsed); err != nil {
 		c.Close()
 		return nil, err
@@ -475,7 +488,7 @@ func (c *SuricataClient) DumpCounters() (map[string]interface{}, error) {
 }
 
 // Produce a new for the metricInfo
-func newConstMetric(m metricInfo, data map[string]interface{}, labelValues ...string) prometheus.Metric {
+func newConstMetric(m metricInfo, data map[string]any, labelValues ...string) prometheus.Metric {
 
 	field_value, ok := data[m.field]
 	if !ok {
@@ -496,22 +509,22 @@ func newConstMetric(m metricInfo, data map[string]interface{}, labelValues ...st
 }
 
 // Extract Napatech related metrics from message
-func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]interface{}) {
-	if napaTotal, ok := message["napa_total"].(map[string]interface{}); ok {
+func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]any) {
+	if napaTotal, ok := message["napa_total"].(map[string]any); ok {
 		for _, m := range napaTotalMetrics {
 			if cm := newConstMetric(m, napaTotal); cm != nil {
 				ch <- cm
 			}
 		}
 	}
-	if napaTotal, ok := message["napa_dispatch_host"].(map[string]interface{}); ok {
+	if napaTotal, ok := message["napa_dispatch_host"].(map[string]any); ok {
 		for _, m := range napaDispatchHost {
 			if cm := newConstMetric(m, napaTotal); cm != nil {
 				ch <- cm
 			}
 		}
 	}
-	if napaTotal, ok := message["napa_dispatch_drop"].(map[string]interface{}); ok {
+	if napaTotal, ok := message["napa_dispatch_drop"].(map[string]any); ok {
 		for _, m := range napaDispatchDrop {
 			if cm := newConstMetric(m, napaTotal); cm != nil {
 				ch <- cm
@@ -520,15 +533,15 @@ func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]inter
 	}
 }
 
-func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
-	if capture, ok := thread["capture"].(map[string]interface{}); ok {
+func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	if capture, ok := thread["capture"].(map[string]any); ok {
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
 				ch <- cm
 			}
 		}
 
-		if afpacket, ok := capture["afpacket"].(map[string]interface{}); ok {
+		if afpacket, ok := capture["afpacket"].(map[string]any); ok {
 			for _, m := range perThreadCaptureAFPacketMetrics {
 				if cm := newConstMetric(m, afpacket, threadName); cm != nil {
 					ch <- cm
@@ -551,30 +564,30 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 		}
 	}
 
-	tcp := thread["tcp"].(map[string]interface{})
+	tcp := thread["tcp"].(map[string]any)
 	for _, m := range perThreadTcpMetrics {
 		if cm := newConstMetric(m, tcp, threadName); cm != nil {
 			ch <- cm
 		}
 	}
 
-	flow := thread["flow"].(map[string]interface{})
+	flow := thread["flow"].(map[string]any)
 	for _, m := range perThreadFlowMetrics {
 		if cm := newConstMetric(m, flow, threadName); cm != nil {
 			ch <- cm
 		}
 	}
 
-	wrk := flow["wrk"].(map[string]interface{})
+	wrk := flow["wrk"].(map[string]any)
 	for _, m := range perThreadFlowWrkMetrics {
 		if cm := newConstMetric(m, wrk, threadName); cm != nil {
 			ch <- cm
 		}
 	}
 
-	defrag := thread["defrag"].(map[string]interface{})
-	defragIpv4 := defrag["ipv4"].(map[string]interface{})
-	defragIpv6 := defrag["ipv6"].(map[string]interface{})
+	defrag := thread["defrag"].(map[string]any)
+	defragIpv4 := defrag["ipv4"].(map[string]any)
+	defragIpv6 := defrag["ipv6"].(map[string]any)
 	for _, m := range perThreadDefragIpv4Metrics {
 		if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
 			ch <- cm
@@ -591,7 +604,7 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 		}
 	}
 
-	detect := thread["detect"].(map[string]interface{})
+	detect := thread["detect"].(map[string]any)
 	for _, m := range perThreadDetectMetrics {
 		if cm := newConstMetric(m, detect, threadName); cm != nil {
 			ch <- cm
@@ -600,14 +613,14 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 
 	// Convert all decoder entries that look like numbers
 	// as perThreadDecoder metric with a "kind" label.
-	decoder := thread["decoder"].(map[string]interface{})
+	decoder := thread["decoder"].(map[string]any)
 	for _, m := range perThreadDecoderMetrics {
 		if cm := newConstMetric(m, decoder, threadName); cm != nil {
 			ch <- cm
 		}
 	}
 
-	bypassed := thread["flow_bypassed"].(map[string]interface{})
+	bypassed := thread["flow_bypassed"].(map[string]any)
 	for _, m := range perThreadFlowBypassedMetrics {
 		if cm := newConstMetric(m, bypassed, threadName); cm != nil {
 			ch <- cm
@@ -619,8 +632,8 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 	//
 	// suricata_app_layer_flows_total{app="ntp",thread="W#08-wlp0s20f3"} 87
 	// suricata_app_layer_flows_total{app="tls",thread="W#04-wlp0s20f3"} 204
-	appLayer := thread["app_layer"].(map[string]interface{})
-	appLayerFlow := appLayer["flow"].(map[string]interface{})
+	appLayer := thread["app_layer"].(map[string]any)
+	appLayerFlow := appLayer["flow"].(map[string]any)
 	for k, v := range appLayerFlow {
 		value, ok := v.(float64)
 		if !ok {
@@ -632,16 +645,16 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 	}
 }
 
-func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
-	flow := thread["flow"].(map[string]interface{})
-	mgr := flow["mgr"].(map[string]interface{})
+func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	flow := thread["flow"].(map[string]any)
+	mgr := flow["mgr"].(map[string]any)
 	for _, m := range perThreadFlowMgrMetrics {
 		if cm := newConstMetric(m, mgr, threadName); cm != nil {
 			ch <- cm
 		}
 	}
 
-	flowBypassed := thread["flow_bypassed"].(map[string]interface{})
+	flowBypassed := thread["flow_bypassed"].(map[string]any)
 	for _, m := range perThreadFlowMgrBypassedMetrics {
 		if cm := newConstMetric(m, flowBypassed, threadName); cm != nil {
 			ch <- cm
@@ -650,9 +663,9 @@ func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thr
 }
 
 // Handle flow recycler metrics
-func handleFlowRecyclerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]interface{}) {
-	flow := thread["flow"].(map[string]interface{})
-	recycler := flow["recycler"].(map[string]interface{})
+func handleFlowRecyclerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	flow := thread["flow"].(map[string]any)
+	recycler := flow["recycler"].(map[string]any)
 	for _, m := range perThreadFlowRecyclerMetrics {
 		if cm := newConstMetric(m, recycler, threadName); cm != nil {
 			ch <- cm
@@ -663,8 +676,8 @@ func handleFlowRecyclerThread(ch chan<- prometheus.Metric, threadName string, th
 }
 
 // Handle global metrics.
-func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
-	if globalTcp, ok := message["tcp"].(map[string]interface{}); ok {
+func handleGlobal(ch chan<- prometheus.Metric, message map[string]any) {
+	if globalTcp, ok := message["tcp"].(map[string]any); ok {
 		for _, m := range globalTcpMetrics {
 			if cm := newConstMetric(m, globalTcp); cm != nil {
 				ch <- cm
@@ -674,7 +687,7 @@ func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
 		log.Printf("WARN: No top-level tcp entry in message")
 	}
 
-	if globalFlow, ok := message["flow"].(map[string]interface{}); ok {
+	if globalFlow, ok := message["flow"].(map[string]any); ok {
 		for _, m := range globalFlowMetrics {
 			if cm := newConstMetric(m, globalFlow); cm != nil {
 				ch <- cm
@@ -684,24 +697,24 @@ func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
 		log.Printf("WARN: No top-level flow entry message")
 	}
 
-	if globalHttp, ok := message["http"].(map[string]interface{}); ok {
+	if globalHttp, ok := message["http"].(map[string]any); ok {
 		ch <- prometheus.MustNewConstMetric(httpMemuseMetric.desc,
 			httpMemuseMetric.t, globalHttp["memuse"].(float64))
 	} else {
 		log.Printf("WARN: No top-level http entry message")
 	}
 
-	if globalFtp, ok := message["ftp"].(map[string]interface{}); ok {
+	if globalFtp, ok := message["ftp"].(map[string]any); ok {
 		ch <- prometheus.MustNewConstMetric(ftpMemuseMetric.desc,
 			httpMemuseMetric.t, globalFtp["memuse"].(float64))
 	} else {
 		log.Printf("WARN: No top-level ftp entry message")
 	}
 
-	if globalDetect, ok := message["detect"].(map[string]interface{}); ok {
-		if engines, ok := globalDetect["engines"].([]interface{}); ok {
+	if globalDetect, ok := message["detect"].(map[string]any); ok {
+		if engines, ok := globalDetect["engines"].([]any); ok {
 			for _, e := range engines {
-				em := e.(map[string]interface{})
+				em := e.(map[string]any)
 				engine_id := strconv.Itoa(int(em["id"].(float64)))
 				rules_loaded := em["rules_loaded"].(float64)
 				rules_failed := em["rules_failed"].(float64)
@@ -730,16 +743,16 @@ func handleGlobal(ch chan<- prometheus.Metric, message map[string]interface{}) {
 
 }
 
-func produceMetrics(ch chan<- prometheus.Metric, counters map[string]interface{}) {
+func produceMetrics(ch chan<- prometheus.Metric, counters map[string]any) {
 
-	message := counters["message"].(map[string]interface{})
+	message := counters["message"].(map[string]any)
 
 	// Uptime metric
 	ch <- newConstMetric(metricUptime, message)
 
 	// Produce per thread metrics
-	for threadName, thread_ := range message["threads"].(map[string]interface{}) {
-		if thread, ok := thread_.(map[string]interface{}); ok {
+	for threadName, thread_ := range message["threads"].(map[string]any) {
+		if thread, ok := thread_.(map[string]any); ok {
 			if strings.HasPrefix(threadName, "W#") {
 				handleWorkerThread(ch, threadName, thread)
 			} else if strings.HasPrefix(threadName, "FM") {
@@ -817,13 +830,16 @@ func main() {
 
 	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html>
+		_, err := w.Write([]byte(`<html>
 			<head><title>Suricata Exporter</title></head>
 			<body>
 			<h1>Suricata Exporter</h1>
 			<p><a href="` + *path + `">Metrics</a></p>
 			</body>
 			</html>`))
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
 	})
 
 	if err := http.ListenAndServe(*addr, nil); err != nil {

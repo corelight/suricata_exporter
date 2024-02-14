@@ -4,10 +4,9 @@ This is a Prometheus Exporter for Suricata using `dump-counters` via the
 [unix socket](https://suricata.readthedocs.io/en/suricata-6.0.0/unix-socket.html#interacting-via-unix-socket)
 to query metrics.
 
-
 ## Usage
 
-```
+```bash
 $ ./suricata_exporter -h
 Usage of ./suricata_exporter:
   -suricata.socket-path string
@@ -21,7 +20,7 @@ Usage of ./suricata_exporter:
 To verify the exporter is working with your Suricata setup, use the
 following command to view a subset of the capture metrics.
 
-```
+```bash
 $ curl -s localhost:9917/metrics | grep kernel_packets_total
 # HELP suricata_capture_kernel_packets_total
 # TYPE suricata_capture_kernel_packets_total counter
@@ -34,7 +33,6 @@ suricata_capture_kernel_packets_total{thread="W#04-eth1"} 9747
 You can now configure a [Prometheus server](https://prometheus.io/docs/prometheus/latest/getting_started/)
 to scrape the Suricata exporter in regular intervals for later visualization
 and analysis.
-
 
 ## Metrics
 
