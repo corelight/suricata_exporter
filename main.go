@@ -45,12 +45,12 @@ func newMetric(subsystem, name, docString string, t prometheus.ValueType, field 
 		t:     t,
 		field: field,
 	}
-
 }
 
 func newCounterMetric(subsystem, name, docString string, field string, variableLabels ...string) metricInfo {
 	return newMetric(subsystem, name, docString, prometheus.CounterValue, field, variableLabels)
 }
+
 func newGaugeMetric(subsystem, name, docString string, field string, variableLabels ...string) metricInfo {
 	return newMetric(subsystem, name, docString, prometheus.GaugeValue, field, variableLabels)
 }
@@ -68,8 +68,11 @@ func newPerThreadGaugeMetric(subsystem, name, docString string, field string, va
 // Hmm, hmm, might be able to auto-generate/unify this a bit. But harder if
 // we actually start documenting individual fields.
 var (
-	metricUptime = newMetric("", "uptime_seconds", "Uptime for the Suricata process in seconds", prometheus.GaugeValue, "uptime", []string{})
-
+	metricUptime  = newMetric("", "uptime_seconds", "Uptime for the Suricata process in seconds", prometheus.GaugeValue, "uptime", []string{})
+	memcapMetrics = map[string]metricInfo{
+		"memcap_pressure":     newMetric("", "memcap_pressure", "Percentage of memcaps used", prometheus.GaugeValue, "memcap_pressure", []string{}),
+		"memcap_pressure_max": newMetric("", "memcap_pressure_max", "Max memcap_pressure seen", prometheus.GaugeValue, "memcap_pressure_max", []string{}),
+	}
 	// From .thread.capture
 	perThreadCaptureMetrics = []metricInfo{
 		newPerThreadCounterMetric("capture", "kernel_packets_total", "", "kernel_packets"),
@@ -489,7 +492,6 @@ func (c *SuricataClient) DumpCounters() (map[string]any, error) {
 
 // Produce a new for the metricInfo
 func newConstMetric(m metricInfo, data map[string]any, labelValues ...string) prometheus.Metric {
-
 	field_value, ok := data[m.field]
 	if !ok {
 		if !m.optional {
@@ -646,6 +648,14 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 }
 
 func handleFlowManagerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	for name, mInfo := range memcapMetrics {
+		_, ok := thread[name]
+		if ok {
+			if cm := newConstMetric(mInfo, thread); cm != nil {
+				ch <- cm
+			}
+		}
+	}
 	flow := thread["flow"].(map[string]any)
 	mgr := flow["mgr"].(map[string]any)
 	for _, m := range perThreadFlowMgrMetrics {
@@ -736,38 +746,40 @@ func handleGlobal(ch chan<- prometheus.Metric, message map[string]any) {
 		} else {
 			log.Printf("WARN: No detect.engines entry")
 		}
-
 	} else {
 		log.Printf("WARN: No top-level detect entry")
 	}
-
 }
 
 func produceMetrics(ch chan<- prometheus.Metric, counters map[string]any) {
-
 	message := counters["message"].(map[string]any)
 
 	// Uptime metric
 	ch <- newConstMetric(metricUptime, message)
 
 	// Produce per thread metrics
-	for threadName, thread_ := range message["threads"].(map[string]any) {
-		if thread, ok := thread_.(map[string]any); ok {
-			if strings.HasPrefix(threadName, "W#") {
-				handleWorkerThread(ch, threadName, thread)
-			} else if strings.HasPrefix(threadName, "FM") {
-				handleFlowManagerThread(ch, threadName, thread)
-			} else if strings.HasPrefix(threadName, "FR") {
-				handleFlowRecyclerThread(ch, threadName, thread)
-			} else if threadName == "Global" {
+	for key, value := range message["threads"].(map[string]any) {
+		// memcap_pressure and memcap_pressure_max can be found in message["threads"],
+		// let's check for that
+		mInfo, ok := memcapMetrics[key]
+		if ok {
+			ch <- newConstMetric(mInfo, message)
+		} else if thread, ok := value.(map[string]any); ok {
+			if strings.HasPrefix(key, "W#") {
+				handleWorkerThread(ch, key, thread)
+			} else if strings.HasPrefix(key, "FM") {
+				handleFlowManagerThread(ch, key, thread)
+			} else if strings.HasPrefix(key, "FR") {
+				handleFlowRecyclerThread(ch, key, thread)
+			} else if key == "Global" {
 				// Skip
-			} else if threadName == "NapatechStats" {
+			} else if key == "NapatechStats" {
 				// Skip
 			} else {
-				log.Printf("WARN: Unhandled thread: %s", threadName)
+				log.Printf("WARN: Unhandled thread: %s", key)
 			}
 		} else {
-			log.Printf("WARN: Threads entry %s not a map[string]", threadName)
+			log.Printf("WARN: Threads entry %s not a map[string]", key)
 		}
 	}
 

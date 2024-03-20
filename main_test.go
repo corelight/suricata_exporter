@@ -16,6 +16,9 @@ import (
 
 var (
 	descStringRe   = regexp.MustCompile("fqName: \"([^\"]+)\"")
+	rulesLoadedRe  = regexp.MustCompile(`label:{name:"id"\s+value:"0"}\s+gauge:{value:42}`)
+	rulesFailedRe  = regexp.MustCompile(`label:{name:"id"\s+value:"0"}\s+gauge:{value:18}`)
+	lastReloadRe   = regexp.MustCompile(`label:{name:"id"\s+value:"0"}\s+gauge:{value:1.638959318e\+09}`)
 	sampleCounters = map[string]any{
 		"message": map[string]any{
 			"uptime":  123.0,
@@ -30,7 +33,8 @@ var (
 					},
 				},
 			},
-		}}
+		},
+	}
 )
 
 type testMetric struct {
@@ -83,7 +87,6 @@ func testMetricFromMetric(m prometheus.Metric) testMetric {
 	for _, lp := range dm.GetLabel() {
 		labels[*lp.Name] = *lp.Value
 	}
-
 	matches := descStringRe.FindStringSubmatch(desc.String())
 
 	return testMetric{
@@ -120,7 +123,6 @@ func produceMetricsHelper(data map[string]any) []prometheus.Metric {
 }
 
 func TestProduceMetricsRules(t *testing.T) {
-
 	metrics := produceMetricsHelper(sampleCounters)
 
 	found_rules_loaded := false
@@ -134,10 +136,9 @@ func TestProduceMetricsRules(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:42}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
+			// use regex here because for some reason spacing can be inconsistent (sometimes two, sometimes one)
+			if !rulesLoadedRe.MatchString(dm.String()) {
+				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", rulesLoadedRe.String(), dm.String())
 			}
 		} else if strings.Contains(m.Desc().String(), "suricata_detect_engine_rules_failed") {
 			dm := &dto.Metric{}
@@ -146,9 +147,9 @@ func TestProduceMetricsRules(t *testing.T) {
 				t.Error(err)
 			}
 			found_rules_failed = true
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:18}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
+			// use regex here because for some reason spacing can be inconsistent (sometimes two, sometimes one)
+			if !rulesFailedRe.MatchString(dm.String()) {
+				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", rulesFailedRe.String(), dm.String())
 			}
 
 		}
@@ -163,7 +164,6 @@ func TestProduceMetricsRules(t *testing.T) {
 }
 
 func TestProduceMetricsLastReload(t *testing.T) {
-
 	metrics := produceMetricsHelper(sampleCounters)
 
 	found_last_reload := false
@@ -176,9 +176,9 @@ func TestProduceMetricsLastReload(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:1.638959318e+09}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
+			// use regex here because for some reason spacing can be inconsistent (sometimes two, sometimes one)
+			if !lastReloadRe.MatchString(dm.String()) {
+				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", lastReloadRe.String(), dm.String())
 			}
 		}
 	}
@@ -327,6 +327,16 @@ func TestDump700AFPacket(t *testing.T) {
 	if len(tms) != 2 {
 		t.Errorf("Unexpected number of suricata_detect_alerts_queue_overflows_total metrics: %v", len(tms))
 	}
+
+	mcp := agged["suricata_memcap_pressure"]
+	if len(mcp) != 1 {
+		t.Errorf("Unexpected number of suricata_memcap_pressure: %v", len(mcp))
+	}
+
+	mcpMax := agged["suricata_memcap_pressure_max"]
+	if len(mcpMax) != 1 {
+		t.Errorf("Unexpected number of suricata_memcap_pressure_max: %v", len(mcp))
+	}
 }
 
 func TestDump701(t *testing.T) {
@@ -348,5 +358,15 @@ func TestDump701(t *testing.T) {
 
 	if len(tms) != 2 {
 		t.Errorf("Unexpected number of suricata_flow_mgr_flows_checked_total: %v", len(tms))
+	}
+
+	mcp := agged["suricata_memcap_pressure"]
+	if len(mcp) != 1 {
+		t.Errorf("Unexpected number of suricata_memcap_pressure: %v", len(mcp))
+	}
+
+	mcpMax := agged["suricata_memcap_pressure_max"]
+	if len(mcpMax) != 1 {
+		t.Errorf("Unexpected number of suricata_memcap_pressure_max: %v", len(mcp))
 	}
 }
