@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -80,8 +82,10 @@ func testMetricFromMetric(m prometheus.Metric) testMetric {
 	labels := make(map[string]string)
 
 	// Iterate over LabelPairs
-	for _, lp := range dm.GetLabel() {
-		labels[*lp.Name] = *lp.Value
+	if dm.GetLabel() != nil {
+		for _, lp := range dm.GetLabel() {
+			labels[lp.GetName()] = lp.GetValue()
+		}
 	}
 
 	matches := descStringRe.FindStringSubmatch(desc.String())
@@ -119,45 +123,52 @@ func produceMetricsHelper(data map[string]any) []prometheus.Metric {
 	return metrics
 }
 
+func almostEqual(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
+}
+
+func testRulesMetricGauge(t *testing.T, tm *testMetric, value float64) {
+	t.Helper()
+	if tm.type_ != "gauge" {
+		t.Errorf("rules_loaded not a gauge, is %v", tm.type_)
+	}
+
+	if !almostEqual(tm.value, value) {
+		t.Errorf("wrong gauge value %+v", tm.value)
+	}
+
+	if len(tm.labels) != 1 {
+		t.Errorf("expected single rules loaded label")
+	}
+
+	if !reflect.DeepEqual(tm.labels, map[string]string{"id": "0"}) {
+		t.Errorf("unexpected labels %+v", tm.labels)
+	}
+}
+
 func TestProduceMetricsRules(t *testing.T) {
 
 	metrics := produceMetricsHelper(sampleCounters)
 
-	found_rules_loaded := false
-	found_rules_failed := false
+	foundRulesLoaded := false
+	foundRulesFailed := false
 
 	for _, m := range metrics {
 		if strings.Contains(m.Desc().String(), "suricata_detect_engine_rules_loaded") {
-			found_rules_loaded = true
-			dm := &dto.Metric{}
-			err := m.Write(dm)
-			if err != nil {
-				t.Error(err)
-			}
-
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:42}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
-			}
+			foundRulesLoaded = true
+			tm := testMetricFromMetric(m)
+			testRulesMetricGauge(t, &tm, 42.0)
 		} else if strings.Contains(m.Desc().String(), "suricata_detect_engine_rules_failed") {
-			dm := &dto.Metric{}
-			err := m.Write(dm)
-			if err != nil {
-				t.Error(err)
-			}
-			found_rules_failed = true
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:18}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
-			}
-
+			foundRulesFailed = true
+			tm := testMetricFromMetric(m)
+			testRulesMetricGauge(t, &tm, 18.0)
 		}
 	}
 
-	if !found_rules_loaded {
+	if !foundRulesLoaded {
 		t.Errorf("Failed to find suricata_detect_engine_rules_loaded metric")
 	}
-	if !found_rules_failed {
+	if !foundRulesFailed {
 		t.Errorf("Failed to find suricata_detect_engine_rules_loaded metric")
 	}
 }
@@ -166,24 +177,17 @@ func TestProduceMetricsLastReload(t *testing.T) {
 
 	metrics := produceMetricsHelper(sampleCounters)
 
-	found_last_reload := false
+	foundLastReload := false
 
 	for _, m := range metrics {
 		if strings.Contains(m.Desc().String(), "suricata_detect_engine_last_reload") {
-			found_last_reload = true
-			dm := &dto.Metric{}
-			err := m.Write(dm)
-			if err != nil {
-				t.Error(err)
-			}
-			expected := `label:{name:"id"  value:"0"}  gauge:{value:1.638959318e+09}`
-			if dm.String() != expected {
-				t.Errorf("Unexpected rules_loaded metric: expected=%q have=%q", expected, dm.String())
-			}
+			foundLastReload = true
+			tm := testMetricFromMetric(m)
+			testRulesMetricGauge(t, &tm, 1638959318.0)
 		}
 	}
 
-	if !found_last_reload {
+	if !foundLastReload {
 		t.Errorf("Failed to find suricata_detect_engine_last_reload_timestamp_seconds metric")
 	}
 }
