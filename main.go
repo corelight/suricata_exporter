@@ -320,6 +320,14 @@ var (
 		newCounterMetric("napatech", "dispatch_drop_packets_total", "", "pkts"),
 		newCounterMetric("napatech", "dispatch_drop_bytes_total", "", "byte"),
 	}
+
+	// Metric desc used for reporting collection failures
+	FailedCollectionDesc = prometheus.NewDesc(
+		prometheus.BuildFQName("suricata", "collection", "failure"),
+		"invalid metric for reporting collection failures",
+		[]string{},
+		nil,
+	)
 )
 
 func NewSuricataClient(socketPath string) *SuricataClient {
@@ -792,6 +800,7 @@ func (sc *suricataCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err := sc.client.EnsureConnection(); err != nil {
 		log.Printf("ERROR: Failed to connect to %v", err)
+		ch <- prometheus.NewInvalidMetric(FailedCollectionDesc, fmt.Errorf("Failed to connect"))
 		return
 	}
 
@@ -828,7 +837,9 @@ func main() {
 	r := prometheus.NewRegistry()
 	r.MustRegister(&suricataCollector{NewSuricataClient(*socketPath), sync.Mutex{}})
 
-	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
+	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.HTTPErrorOnError,
+	}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(`<html>
 			<head><title>Suricata Exporter</title></head>
