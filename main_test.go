@@ -59,6 +59,17 @@ func aggregateMetrics(metrics []prometheus.Metric) map[string][]testMetric {
 	return result
 }
 
+func sortedThreadNames(tms []testMetric) string {
+	tns := make([]string, len(tms)) // thread names
+	for i, tm := range tms {
+		tns[i] = tm.labels["thread"]
+	}
+
+	sort.Strings(tns)
+
+	return fmt.Sprintf("%v", tns)
+}
+
 // Helper converting *prometheus.Metric to something easier usable for testing.
 func testMetricFromMetric(m prometheus.Metric) testMetric {
 	desc := m.Desc()
@@ -216,13 +227,7 @@ func TestDump604AFPacket(t *testing.T) {
 		t.Errorf("Unexpected number of suricata_kernel_packets metrics: %v", len(tms))
 	}
 
-	tns := make([]string, len(tms)) // thread names
-	for i, tm := range tms {
-		tns[i] = tm.labels["thread"]
-	}
-
-	sort.Strings(tns)
-	threadNames := fmt.Sprintf("%v", tns)
+	threadNames := sortedThreadNames(tms)
 	if threadNames != "[W#01-wlp0s20f3 W#02-wlp0s20f3 W#03-wlp0s20f3 W#04-wlp0s20f3 W#05-wlp0s20f3 W#06-wlp0s20f3 W#07-wlp0s20f3 W#08-wlp0s20f3]" {
 		t.Errorf("Unexpected threadNames: %v", threadNames)
 	}
@@ -352,5 +357,106 @@ func TestDump701(t *testing.T) {
 
 	if len(tms) != 2 {
 		t.Errorf("Unexpected number of suricata_flow_mgr_flows_checked_total: %v", len(tms))
+	}
+}
+
+func TestDump706NFQAutoFP(t *testing.T) {
+	data, err := os.ReadFile("./testdata/dump-counters-7.0.6-nfq-autofp.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+
+	tms := agged["suricata_ips_blocked_packets_total"]
+	if len(tms) != 14 {
+		t.Errorf("Unexpected number of suricata_ips_blocked_total: %v", len(tms))
+	}
+
+	threadNames := sortedThreadNames(tms)
+	if threadNames != "[RX-NFQ#0 RX-NFQ#1 RX-NFQ#2 RX-NFQ#3 TX#00 TX#01 TX#02 TX#03 W#01 W#02 W#03 W#04 W#05 W#06]" {
+		t.Errorf("Wrong threads %v", threadNames)
+	}
+}
+
+func TestDump706NFQWorkers(t *testing.T) {
+	data, err := os.ReadFile("./testdata/dump-counters-7.0.6-nfq-workers.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+
+	tms := agged["suricata_ips_blocked_packets_total"]
+	if len(tms) != 4 {
+		t.Errorf("Unexpected number of suricata_ips_blocked_total: %v", len(tms))
+	}
+
+	threadNames := sortedThreadNames(tms)
+	if threadNames != "[W-NFQ#0 W-NFQ#1 W-NFQ#2 W-NFQ#3]" {
+		t.Errorf("Wrong threads %v", threadNames)
+	}
+}
+
+func TestDump706AFPacketAutoFP(t *testing.T) {
+	data, err := os.ReadFile("./testdata/dump-counters-7.0.6-afpacket-autofp.json")
+	if err != nil {
+		log.Panicf("Unable to open file: %s", err)
+	}
+
+	var counters map[string]any
+	err = json.Unmarshal(data, &counters)
+	if err != nil {
+		t.Error(err)
+	}
+
+	metrics := produceMetricsHelper(counters)
+	agged := aggregateMetrics(metrics)
+	tms, ok := agged["suricata_capture_kernel_packets_total"] // test metrics
+	if !ok {
+		t.Errorf("Failed to find suricata_capture_kernel_packets metrics")
+	}
+
+	if len(tms) != 2 {
+		t.Errorf("Unexpected number of suricata_kernel_packets metrics: %v", len(tms))
+	}
+
+	threadNames := sortedThreadNames(tms)
+	if threadNames != "[RX#01 RX#02]" {
+		t.Errorf("Wrong threads %v", threadNames)
+	}
+
+	tms, ok = agged["suricata_decoder_packets_total"]
+	if !ok {
+		t.Errorf("Failed to find suricata_decoder_packets_total metrics")
+	}
+
+	// Decoder stats are reported for rx and worker threads.
+	if len(tms) != 8 {
+		t.Errorf("Unexpected number of suricata_decoder_packets_total metrics: %v", len(tms))
+	}
+
+	tms, ok = agged["suricata_tcp_syn_packets_total"]
+	if !ok {
+		t.Errorf("Failed to find suricata_tcp_syn_packets_total")
+	}
+
+	// TCP metrics report for rx and worker threads.
+	if len(tms) != 8 {
+		t.Errorf("Unexpected number of suricata_decoder_packets_total metrics: %v", len(tms))
 	}
 }
