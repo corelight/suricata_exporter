@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -320,6 +321,18 @@ var (
 		newCounterMetric("napatech", "dispatch_drop_packets_total", "", "pkts"),
 		newCounterMetric("napatech", "dispatch_drop_bytes_total", "", "byte"),
 	}
+
+	// Metric desc used for reporting collection failures
+	FailedCollectionDesc = prometheus.NewDesc(
+		prometheus.BuildFQName("suricata", "collection", "failure"),
+		"invalid metric for reporting collection failures",
+		[]string{},
+		nil,
+	)
+
+	// Errors used for above metric
+	errConnect      = errors.New("failed to connect")
+	errDumpCounters = errors.New("failed to dump-counters")
 )
 
 func NewSuricataClient(socketPath string) *SuricataClient {
@@ -792,12 +805,16 @@ func (sc *suricataCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err := sc.client.EnsureConnection(); err != nil {
 		log.Printf("ERROR: Failed to connect to %v", err)
+		ch <- prometheus.NewInvalidMetric(FailedCollectionDesc, errConnect)
+
 		return
 	}
 
 	counters, err := sc.client.DumpCounters()
 	if err != nil {
 		log.Printf("ERROR: Failed to dump-counters: %v", err)
+		ch <- prometheus.NewInvalidMetric(FailedCollectionDesc, errDumpCounters)
+
 		return
 	}
 
@@ -828,7 +845,9 @@ func main() {
 	r := prometheus.NewRegistry()
 	r.MustRegister(&suricataCollector{NewSuricataClient(*socketPath), sync.Mutex{}})
 
-	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
+	http.Handle(*path, promhttp.HandlerFor(r, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.HTTPErrorOnError,
+	}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte(`<html>
 			<head><title>Suricata Exporter</title></head>
