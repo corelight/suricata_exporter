@@ -202,6 +202,19 @@ var (
 		newPerThreadCounterMetric("flow_bypassed", "local_capture_bytes_total", "", "local_capture_bytes"),
 	}
 
+	perThreadIpsMetrics = []metricInfo{
+		newPerThreadCounterMetric("ips", "accepted_packets_total", "", "accepted"),
+		newPerThreadCounterMetric("ips", "blocked_packets_total", "", "blocked"),
+		newPerThreadCounterMetric("ips", "rejected_packets_total", "", "rejected"),
+		newPerThreadCounterMetric("ips", "replaced_packets_total", "", "replaced"),
+	}
+
+	perThreadTcpMetricsReceive = []metricInfo{
+		newPerThreadCounterMetric("tcp", "syn_packets_total", "", "syn"),
+		newPerThreadCounterMetric("tcp", "synack_packets_total", "", "synack"),
+		newPerThreadCounterMetric("tcp", "rst_packets_total", "", "rst"),
+	}
+
 	// From .thread.tcp
 	perThreadTcpMetrics = []metricInfo{
 		// New in 7.0.0
@@ -221,9 +234,6 @@ var (
 		newPerThreadCounterMetric("tcp", "invalid_checksum_packets_total", "", "invalid_checksum"),
 		// Removed in 7.0.0: 0360cb654293c333e3be70204705fa7ec328512e
 		newPerThreadCounterMetric("tcp", "no_flow_total", "", "no_flow").Optional(),
-		newPerThreadCounterMetric("tcp", "syn_packets_total", "", "syn"),
-		newPerThreadCounterMetric("tcp", "synack_packets_total", "", "synack"),
-		newPerThreadCounterMetric("tcp", "rst_packets_total", "", "rst"),
 		newPerThreadCounterMetric("tcp", "midstream_pickups_total", "", "midstream_pickups"),
 		newPerThreadCounterMetric("tcp", "pkt_on_wrong_thread_total", "", "pkt_on_wrong_thread"),
 		newPerThreadCounterMetric("tcp", "segment_memcap_drop_total", "", "segment_memcap_drop"),
@@ -546,7 +556,12 @@ func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]any) 
 	}
 }
 
-func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+// Handle the shared RX and worker thread portions.
+//
+// Depending on autofp or workers runmode, the "capture" entry
+// is in the RX threads.
+func handleReceiveCommon(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+
 	if capture, ok := thread["capture"].(map[string]any); ok {
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
@@ -577,6 +592,71 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 		}
 	}
 
+	// Convert all decoder entries that look like numbers
+	// as perThreadDecoder metric with a "kind" label.
+	decoder := thread["decoder"].(map[string]any)
+	for _, m := range perThreadDecoderMetrics {
+		if cm := newConstMetric(m, decoder, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	// Defrag stats from worker and receive threads.
+	defrag := thread["defrag"].(map[string]any)
+	defragIpv4 := defrag["ipv4"].(map[string]any)
+	defragIpv6 := defrag["ipv6"].(map[string]any)
+
+	for _, m := range perThreadDefragIpv4Metrics {
+		if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	for _, m := range perThreadDefragIpv6Metrics {
+		if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	for _, m := range perThreadDefragMetrics {
+		if cm := newConstMetric(m, defrag, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+
+	tcp := thread["tcp"].(map[string]any)
+	for _, m := range perThreadTcpMetricsReceive {
+		if cm := newConstMetric(m, tcp, threadName); cm != nil {
+			ch <- cm
+		}
+	}
+}
+
+func handleIps(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	// Extract basic IPS metrics if they exist.
+	if ips, ok := thread["ips"].(map[string]any); ok {
+		for _, m := range perThreadIpsMetrics {
+			if cm := newConstMetric(m, ips, threadName); cm != nil {
+				ch <- cm
+			}
+		}
+	}
+}
+
+// Receive threads have the same layout as worker threads.
+func handleReceiveThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	handleReceiveCommon(ch, threadName, thread)
+	handleIps(ch, threadName, thread)
+}
+
+func handleTransmitThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	handleIps(ch, threadName, thread)
+}
+
+func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
+	handleReceiveCommon(ch, threadName, thread)
+	handleIps(ch, threadName, thread)
+
 	tcp := thread["tcp"].(map[string]any)
 	for _, m := range perThreadTcpMetrics {
 		if cm := newConstMetric(m, tcp, threadName); cm != nil {
@@ -598,37 +678,9 @@ func handleWorkerThread(ch chan<- prometheus.Metric, threadName string, thread m
 		}
 	}
 
-	defrag := thread["defrag"].(map[string]any)
-	defragIpv4 := defrag["ipv4"].(map[string]any)
-	defragIpv6 := defrag["ipv6"].(map[string]any)
-	for _, m := range perThreadDefragIpv4Metrics {
-		if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
-			ch <- cm
-		}
-	}
-	for _, m := range perThreadDefragIpv6Metrics {
-		if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
-			ch <- cm
-		}
-	}
-	for _, m := range perThreadDefragMetrics {
-		if cm := newConstMetric(m, defrag, threadName); cm != nil {
-			ch <- cm
-		}
-	}
-
 	detect := thread["detect"].(map[string]any)
 	for _, m := range perThreadDetectMetrics {
 		if cm := newConstMetric(m, detect, threadName); cm != nil {
-			ch <- cm
-		}
-	}
-
-	// Convert all decoder entries that look like numbers
-	// as perThreadDecoder metric with a "kind" label.
-	decoder := thread["decoder"].(map[string]any)
-	for _, m := range perThreadDecoderMetrics {
-		if cm := newConstMetric(m, decoder, threadName); cm != nil {
 			ch <- cm
 		}
 	}
@@ -766,8 +818,12 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]any) {
 	// Produce per thread metrics
 	for threadName, thread_ := range message["threads"].(map[string]any) {
 		if thread, ok := thread_.(map[string]any); ok {
-			if strings.HasPrefix(threadName, "W#") {
+			if strings.HasPrefix(threadName, "W#") || strings.HasPrefix(threadName, "W-") {
 				handleWorkerThread(ch, threadName, thread)
+			} else if strings.HasPrefix(threadName, "RX") {
+				handleReceiveThread(ch, threadName, thread)
+			} else if strings.HasPrefix(threadName, "TX") {
+				handleTransmitThread(ch, threadName, thread)
 			} else if strings.HasPrefix(threadName, "FM") {
 				handleFlowManagerThread(ch, threadName, thread)
 			} else if strings.HasPrefix(threadName, "FR") {
