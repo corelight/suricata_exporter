@@ -836,7 +836,13 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]any) {
 				log.Printf("WARN: Unhandled thread: %s", threadName)
 			}
 		} else {
-			log.Printf("WARN: Threads entry %s not a map[string]", threadName)
+			// The following two show up under threads in 7.0.x,
+			// ignore them.
+			//
+			// https://redmine.openinfosecfoundation.org/issues/6398
+			if threadName != "memcap_pressure" && threadName != "memcap_pressure_max" {
+				log.Printf("WARN: Threads entry %s not a map[string]", threadName)
+			}
 		}
 	}
 
