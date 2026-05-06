@@ -70,6 +70,15 @@ func sortedThreadNames(tms []testMetric) string {
 	return fmt.Sprintf("%v", tns)
 }
 
+// testMetricValuesByThread maps the thread label to the sample value.
+func testMetricValuesByThread(tms []testMetric) map[string]float64 {
+	out := make(map[string]float64, len(tms))
+	for _, tm := range tms {
+		out[tm.labels["thread"]] = tm.value
+	}
+	return out
+}
+
 // Helper converting *prometheus.Metric to something easier usable for testing.
 func testMetricFromMetric(m prometheus.Metric) testMetric {
 	desc := m.Desc()
@@ -506,9 +515,15 @@ func TestDump800AFPacket(t *testing.T) {
 	if ok {
 		t.Errorf("Failed, found suricata_defrag_max_frag_hits metrics when it should not be present")
 	}
+	if len(tms) != 0 {
+		t.Errorf("Unexpected number of suricata_defrag_max_frag_hits: %v", len(tms))
+	}
 	tms, ok = agged["suricata_tcp_pseudo_failed_total"]
 	if ok {
 		t.Errorf("Failed, found suricata_tcp_pseudo_failed_total metrics when it should not be present")
+	}
+	if len(tms) != 0 {
+		t.Errorf("Unexpected number of suricata_tcp_pseudo_failed_total: %v", len(tms))
 	}
 
 	// New metrics in 8.0.0
@@ -566,14 +581,20 @@ func TestDump800AFPacket(t *testing.T) {
 		t.Errorf("Failed to find suricata_flow_end_state_closed_total metrics")
 	}
 
-	// Perform the calculation per each thread
-	for i := 0; i < len(tms_fall); i++ {
-		tm_fall := tms_fall[i]
-		tm_fact := tms_fact[i]
-		tm_fcls := tms_fcls[i]
-
-		if tm_fall.value != (tm_fact.value + tm_fcls.value) {
-			t.Errorf("suricata_flow_all_total (%v) != suricata_flow_active_flows (%v) + suricata_flow_end_state_closed_total (%v)", tm_fall.value, tm_fact.value, tm_fcls.value)
+	// Per thread (not slice index): FR threads emit flow.end.state but not flow.all/active,
+	// and map iteration order over threads is not stable across Go versions.
+	byFall := testMetricValuesByThread(tms_fall)
+	byAct := testMetricValuesByThread(tms_fact)
+	byCls := testMetricValuesByThread(tms_fcls)
+	for thread, vfall := range byFall {
+		vact, okAct := byAct[thread]
+		vcls, okCls := byCls[thread]
+		if !okAct || !okCls {
+			t.Errorf("thread %q: missing flow active (%v) or flow end closed (%v) for suricata_flow_all_total", thread, okAct, okCls)
+			continue
+		}
+		if vfall != vact+vcls {
+			t.Errorf("thread %q: suricata_flow_all_total (%v) != suricata_flow_active_flows (%v) + suricata_flow_end_state_closed_total (%v)", thread, vfall, vact, vcls)
 		}
 	}
 }
