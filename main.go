@@ -436,7 +436,7 @@ type SuricataClient struct {
 
 func (c *SuricataClient) Close() {
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 	}
 
 	c.conn = nil
@@ -445,7 +445,7 @@ func (c *SuricataClient) Close() {
 func (c *SuricataClient) EnsureConnection() error {
 	var rerr error
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if c.conn == nil {
 			// Try to establish UNIX connection and do the
 			// handshake. Either of these failing is fatal.
@@ -487,7 +487,10 @@ func (c *SuricataClient) Handshake() error {
 		return err
 	}
 
-	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+	_, err = fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+	if err != nil {
+		return fmt.Errorf("failed to write to Suricata: %w", err)
+	}
 
 	reader := bufio.NewReader(c.conn)
 	line, err := reader.ReadBytes('\n')
@@ -519,7 +522,11 @@ func (c *SuricataClient) Uptime() (uint64, error) {
 		c.Close()
 		return 0, err
 	}
-	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+
+	_, err = fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+	if err != nil {
+		return 0, fmt.Errorf("failed to write to Suricata: %w", err)
+	}
 
 	reader := bufio.NewReader(c.conn)
 	line, err := reader.ReadBytes('\n')
@@ -558,10 +565,14 @@ func (c *SuricataClient) DumpCounters() (map[string]any, error) {
 		c.Close()
 		return nil, err
 	}
-	fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+
+	_, err = fmt.Fprintf(c.conn, "%s\n", string(cmdData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to write to Suricata: %w", err)
+	}
 
 	// Read until '\n' shows up or there was an error. A lot of data
-	// is retuned, so may read short.
+	// is returned, so may read short.
 	reader := bufio.NewReader(c.conn)
 	var response []byte
 	for {
