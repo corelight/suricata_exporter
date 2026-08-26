@@ -420,6 +420,13 @@ var (
 		nil,
 	)
 
+	SuricataVersionInfo = prometheus.NewDesc(
+		"suricata_version_info",
+		"Suricata version information",
+		[]string{"version"},
+		nil,
+	)
+
 	// Errors used for above metric
 	errConnect      = errors.New("failed to connect")
 	errDumpCounters = errors.New("failed to dump-counters")
@@ -977,6 +984,11 @@ func produceMetrics(ch chan<- prometheus.Metric, counters map[string]any) {
 
 	// Uptime metric
 	ch <- newConstMetric(metricUptime, message)
+
+	// Version info metric (string value exposed as a label)
+	if version, ok := message["version"].(string); ok {
+		ch <- prometheus.MustNewConstMetric(SuricataVersionInfo, prometheus.GaugeValue, 1, version)
+	}
 
 	// Produce per thread metrics if not in totals mode.
 	if !*totals {

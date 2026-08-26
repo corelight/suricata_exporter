@@ -21,6 +21,7 @@ var (
 	sampleCounters = map[string]any{
 		"message": map[string]any{
 			"uptime":  123.0,
+			"version": "8.0.6-corelight.8+1927",
 			"threads": map[string]any{},
 			"detect": map[string]any{
 				"engines": []any{
@@ -209,6 +210,33 @@ func TestProduceMetricsLastReload(t *testing.T) {
 
 	if !foundLastReload {
 		t.Errorf("Failed to find suricata_detect_engine_last_reload_timestamp_seconds metric")
+	}
+}
+
+func TestProduceMetricsVersionInfo(t *testing.T) {
+
+	metrics := produceMetricsHelper(sampleCounters)
+
+	foundVersion := false
+
+	for _, m := range metrics {
+		if strings.Contains(m.Desc().String(), "suricata_version_info") {
+			foundVersion = true
+			tm := testMetricFromMetric(m)
+			if tm.type_ != "gauge" {
+				t.Errorf("version_info not a gauge, is %v", tm.type_)
+			}
+			if !almostEqual(tm.value, 1.0) {
+				t.Errorf("version_info value should be 1, got %v", tm.value)
+			}
+			if tm.labels["version"] != "8.0.6-corelight.8+1927" {
+				t.Errorf("unexpected version label %q", tm.labels["version"])
+			}
+		}
+	}
+
+	if !foundVersion {
+		t.Errorf("Failed to find suricata_version_info metric")
 	}
 }
 
