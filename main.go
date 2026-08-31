@@ -659,7 +659,6 @@ func handleNapatechMetrics(ch chan<- prometheus.Metric, message map[string]any) 
 // Depending on autofp or workers runmode, the "capture" entry
 // is in the RX threads.
 func handleReceiveCommon(ch chan<- prometheus.Metric, threadName string, thread map[string]any) {
-
 	if capture, ok := thread["capture"].(map[string]any); ok {
 		for _, m := range perThreadCaptureMetrics {
 			if cm := newConstMetric(m, capture, threadName); cm != nil {
@@ -692,51 +691,61 @@ func handleReceiveCommon(ch chan<- prometheus.Metric, threadName string, thread 
 
 	// Convert all decoder entries that look like numbers
 	// as perThreadDecoder metric with a "kind" label.
-	decoder := thread["decoder"].(map[string]any)
-	for _, m := range perThreadDecoderMetrics {
-		if cm := newConstMetric(m, decoder, threadName); cm != nil {
-			ch <- cm
-		}
-	}
-
-	// Handle decoder events
-	event := decoder["event"].(map[string]any)
-
-	if event_afpacket, ok := event["afpacket"].(map[string]any); ok {
-		for _, m := range perThreadDecoderEventAFPacketMetrics {
-			if cm := newConstMetric(m, event_afpacket, threadName); cm != nil {
+	decoder, decoder_status := thread["decoder"].(map[string]any);
+	if decoder_status {
+		for _, m := range perThreadDecoderMetrics {
+			if cm := newConstMetric(m, decoder, threadName); cm != nil {
 				ch <- cm
+			}
+		}
+
+		event, event_status := decoder["event"].(map[string]any);
+		if event_status {
+			if event_afpacket, ok := event["afpacket"].(map[string]any); ok {
+				for _, m := range perThreadDecoderEventAFPacketMetrics {
+					if cm := newConstMetric(m, event_afpacket, threadName); cm != nil {
+						ch <- cm
+					}
+				}
 			}
 		}
 	}
 
+	// Handle decoder events
+
 	// Defrag stats from worker and receive threads.
-	defrag := thread["defrag"].(map[string]any)
-	defragIpv4 := defrag["ipv4"].(map[string]any)
-	defragIpv6 := defrag["ipv6"].(map[string]any)
-
-	for _, m := range perThreadDefragIpv4Metrics {
-		if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
-			ch <- cm
+	defrag, defrag_status := thread["defrag"].(map[string]any)
+	if defrag_status {
+		defragIpv4, defragIpv4_status := defrag["ipv4"].(map[string]any)
+		if defragIpv4_status {
+			for _, m := range perThreadDefragIpv4Metrics {
+				if cm := newConstMetric(m, defragIpv4, threadName); cm != nil {
+					ch <- cm
+				}
+			}
 		}
-	}
-
-	for _, m := range perThreadDefragIpv6Metrics {
-		if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
-			ch <- cm
+		defragIpv6, defragIpv6_status := defrag["ipv6"].(map[string]any)
+		if defragIpv6_status {
+			for _, m := range perThreadDefragIpv6Metrics {
+				if cm := newConstMetric(m, defragIpv6, threadName); cm != nil {
+					ch <- cm
+				}
+			}
 		}
-	}
-
-	for _, m := range perThreadDefragMetrics {
-		if cm := newConstMetric(m, defrag, threadName); cm != nil {
-			ch <- cm
+		for _, m := range perThreadDefragMetrics {
+			if cm := newConstMetric(m, defrag, threadName); cm != nil {
+				ch <- cm
+			}
 		}
-	}
+  }
 
-	tcp := thread["tcp"].(map[string]any)
-	for _, m := range perThreadTcpMetricsReceive {
-		if cm := newConstMetric(m, tcp, threadName); cm != nil {
-			ch <- cm
+
+	tcp, tcp_status := thread["tcp"].(map[string]any)
+	if tcp_status {
+		for _, m := range perThreadTcpMetricsReceive {
+			if cm := newConstMetric(m, tcp, threadName); cm != nil {
+				ch <- cm
+			}
 		}
 	}
 }
