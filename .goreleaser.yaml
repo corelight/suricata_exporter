@@ -1,3 +1,4 @@
+version: 2
 before:
   hooks:
     - go mod tidy
@@ -22,7 +23,5 @@ archives:
 
 checksum:
   name_template: 'checksums.txt'
-snapshot:
-  name_template: "{{ .Summary }}"
 changelog:
-  skip: true
+  disable: true
